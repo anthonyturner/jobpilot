@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ship Feature"
+  short_description: "Run a feature end to end, from request to reviewed pull request"
+  default_prompt: "Use $ship-feature to deliver this feature through a reviewed pull request."

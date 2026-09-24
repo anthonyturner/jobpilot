@@ -1,0 +1,4 @@
+interface:
+  display_name: "Open PR"
+  short_description: "Turn already-written changes into a verified pull request"
+  default_prompt: "Use $open-pr to open a pull request for the work already in my tree."

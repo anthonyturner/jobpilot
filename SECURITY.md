@@ -24,7 +24,7 @@ JobPilot is a single-user app that runs on the user's own computer.
 - **Automation** never submits an application without the user's explicit approval, and stops
   at CAPTCHAs, logins and unknown questions.
 
-Details are in [AGENTS.md](AGENTS.md#security-principles).
+Details are in [docs/security.md](docs/security.md).
 
 ## Scope
 

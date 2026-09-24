@@ -96,7 +96,7 @@ Other application sites fall back to the prepared documents and a link to the po
   data by every AI step.
 
 See [SECURITY.md](SECURITY.md) to report a vulnerability, and
-[AGENTS.md](AGENTS.md#security-principles) for the full design.
+[docs/security.md](docs/security.md) for the full design.
 
 ## Development
 

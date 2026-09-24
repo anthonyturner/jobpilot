@@ -1,0 +1,7 @@
+# Opt-in by name only: Codex never starts a grilling session on its own.
+policy:
+  allow_implicit_invocation: false
+interface:
+  display_name: "Grill Me"
+  short_description: "Stress-test an idea in rounds before it becomes an issue"
+  default_prompt: "Use $grill-me to grill me on this before we file anything."
