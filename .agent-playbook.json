@@ -1,0 +1,25 @@
+{
+  "version": "0.1.0",
+  "project": {
+    "name": "JobPilot",
+    "summary": "Self-hosted job-search copilot: finds jobs matching your resume on a schedule, ranks them, and helps you apply with approval-gated automation."
+  },
+  "commands": {
+    "install": "npm ci",
+    "build": "npm run build",
+    "test": "npm test",
+    "lint": "npm run typecheck"
+  },
+  "repo": {
+    "defaultBranch": "main"
+  },
+  "autonomy": "draft",
+  "tools": [
+    "codex",
+    "copilot"
+  ],
+  "packs": [
+    "node-ts",
+    "angular"
+  ]
+}

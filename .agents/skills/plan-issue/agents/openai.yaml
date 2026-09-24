@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plan Issue"
+  short_description: "Take a request through planning to a filed GitHub issue"
+  default_prompt: "Use $plan-issue to turn my request into a filed GitHub issue."

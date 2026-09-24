@@ -1,0 +1,6 @@
+# Codex project settings for JobPilot.
+# The agents themselves live in .codex/agents/; the workflow they follow lives
+# in docs/agent-workflows/, not here.
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 3
