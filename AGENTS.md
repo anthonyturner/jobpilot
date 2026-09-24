@@ -31,6 +31,7 @@ owner's own Claude Code login), and as an application the owner has approved.
 | `npm test` | Server tests, incl. real-Chrome form filling against LOCAL fixtures. |
 | `npm run typecheck` | Server `tsc --noEmit`. The project's lint step. |
 | `npm run sync` | One sweep from the command line, no server (for Task Scheduler). |
+| `npm run auto-prepare` | One sweep, then tailors the top matches and stops at `review` (for Task Scheduler). Off until enabled in Settings. |
 
 The default branch is `main`. The folder layout and where code belongs are in
 [docs/architecture.md](docs/architecture.md).

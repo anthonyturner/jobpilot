@@ -107,7 +107,7 @@ export interface SourceRunStats {
 
 export interface RunRecord {
   id: number;
-  trigger: 'schedule' | 'manual' | 'ingest';
+  trigger: 'schedule' | 'manual' | 'ingest' | 'unattended';
   status: 'running' | 'succeeded' | 'partial' | 'failed' | 'interrupted';
   startedAt: string;
   finishedAt: string | null;
@@ -274,6 +274,14 @@ export interface Automation {
   modes: Record<AtsId, AtsMode>;
   dailySubmitCap: number;
   sameCompanyGapHours: number;
+  autoPrepare: AutoPrepare;
+}
+
+/** Unattended preparation (`npm run auto-prepare`). It never moves an application past review. */
+export interface AutoPrepare {
+  enabled: boolean;
+  topN: number;
+  minScore: number;
 }
 
 // ---- First-run setup and credentials ------------------------------------------

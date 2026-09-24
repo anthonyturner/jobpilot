@@ -20,17 +20,26 @@ import { findChrome } from './integrations/chrome.js';
 import { ApplicationRepository } from './persistence/application-repository.js';
 import { ApplicantStore } from './services/applicant-store.js';
 import { ApplicationService } from './services/apply/application-service.js';
+import { AutoPrepareService } from './services/apply/auto-prepare-service.js';
 import { PlaywrightFormAutomation } from './services/apply/playwright-automation.js';
 import { ChromePdfRenderer } from './services/documents/pdf-renderer.js';
 import { ClaudeResumeTailor } from './services/tailoring/tailor.js';
 import { CredentialStore } from './services/credential-store.js';
 import { SetupService } from './services/setup/setup-service.js';
 
+export interface ComposeOptions {
+  /**
+   * Marks runs left "running" by a crash as interrupted. Only the server does this: a
+   * command-line process can start while the server is mid-sweep, and must not mark that sweep.
+   */
+  recoverInterruptedRuns?: boolean;
+}
+
 /**
  * Composition root: the only place concrete classes are wired together.
  * Everything else depends on interfaces handed in here (Dependency Inversion).
  */
-export function compose(config: AppConfig, log: Logger) {
+export function compose(config: AppConfig, log: Logger, options: ComposeOptions = {}) {
   const db = openDatabase(config.DATA_DIR);
   const jobs = new JobRepository(db);
   const runs = new RunRepository(db);
@@ -84,9 +93,10 @@ export function compose(config: AppConfig, log: Logger) {
 
   // Phase 2: assisted applying.
   if (!chromePath) log.warn('Chrome/Edge not found: PDF rendering and form filling are unavailable. Set CHROME_PATH.');
+  const applicationRepository = new ApplicationRepository(db);
   const applications = new ApplicationService({
     jobs,
-    applications: new ApplicationRepository(db),
+    applications: applicationRepository,
     audit,
     store: applicantStore,
     tailor: new ClaudeResumeTailor(claude, config.TAILOR_MODEL, config.TAILOR_MAX_BUDGET_USD),
@@ -104,7 +114,17 @@ export function compose(config: AppConfig, log: Logger) {
     }
   }
 
+  const autoPrepare = new AutoPrepareService({
+    jobs,
+    applications: applicationRepository,
+    applying: applications,
+    store: applicantStore,
+    audit,
+    log,
+    blocked: () => (setup.isComplete() ? null : 'Finish the setup wizard before preparing applications.'),
+  });
+
   setup.adoptExistingInstall(!!applicantStore.getResume() || jobs.list({ status: 'all', limit: 1 }).total > 0);
-  runs.markInterrupted();
-  return { db, jobs, runs, audit, profiles, registry, aggregation, applications, applicantStore, credentials, settings, setup, repoRoot: REPO_ROOT };
+  if (options.recoverInterruptedRuns ?? true) runs.markInterrupted();
+  return { db, jobs, runs, audit, profiles, registry, aggregation, applications, autoPrepare, applicantStore, credentials, settings, setup, repoRoot: REPO_ROOT };
 }

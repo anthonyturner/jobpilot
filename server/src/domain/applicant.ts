@@ -55,6 +55,14 @@ export const ATS_IDS = ['greenhouse', 'lever'] as const;
 export type AtsId = (typeof ATS_IDS)[number];
 export type AtsMode = 'off' | 'preview' | 'submit';
 
+/** Unattended preparation (`npm run auto-prepare`): tailors the best matches and stops at review. */
+export const AutoPrepareSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** The run tops the waiting-for-review queue up to this many; each tailoring can cost up to about $2. */
+  topN: z.number().int().min(1).max(10).default(3),
+  minScore: z.number().int().min(0).max(100).default(75),
+});
+
 export const AutomationSchema = z.object({
   /** Master kill switch. Off stops every browser automation, including runs in progress. */
   enabled: z.boolean().default(true),
@@ -66,6 +74,7 @@ export const AutomationSchema = z.object({
     .default({ greenhouse: 'preview', lever: 'preview' }),
   dailySubmitCap: z.number().int().min(0).max(50).default(10),
   sameCompanyGapHours: z.number().int().min(0).max(24 * 30).default(72),
+  autoPrepare: AutoPrepareSchema.default({ enabled: false, topN: 3, minScore: 75 }),
 });
 export type Automation = z.infer<typeof AutomationSchema>;
 

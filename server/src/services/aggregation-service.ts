@@ -127,7 +127,7 @@ export class AggregationService {
     runs.finish(runId, attempted.length === 0 ? 'failed' : status, results, error);
 
     const inserted = attempted.reduce((n, r) => n + r.inserted, 0);
-    audit.record(trigger === 'schedule' ? 'scheduler' : 'user', 'run.finished', null, `Run #${runId}: ${status}, ${inserted} new`);
+    audit.record(trigger === 'schedule' || trigger === 'unattended' ? 'scheduler' : 'user', 'run.finished', null, `Run #${runId}: ${status}, ${inserted} new`);
     log.info(`Run #${runId} ${status}: ${inserted} new listings`);
     return runs.get(runId)!;
   }

@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { SourceId } from '../domain/job.js';
 
-export type RunTrigger = 'schedule' | 'manual' | 'ingest';
+export type RunTrigger = 'schedule' | 'manual' | 'ingest' | 'unattended';
 export type RunStatus = 'running' | 'succeeded' | 'partial' | 'failed' | 'interrupted';
 
 export interface SourceRunStats {
@@ -60,6 +60,14 @@ export class RunRepository {
     this.db
       .prepare(`UPDATE runs SET status = 'interrupted', finished_at = ? WHERE status = 'running'`)
       .run(new Date().toISOString());
+  }
+
+  /** A sweep still marked running that started after `sinceIso`, e.g. one the server is doing right now. */
+  runningSince(sinceIso: string): RunRecord | undefined {
+    const row = this.db
+      .prepare(`SELECT * FROM runs WHERE status = 'running' AND started_at >= ? ORDER BY id DESC LIMIT 1`)
+      .get(sinceIso) as RunRow | undefined;
+    return row ? toRecord(row) : undefined;
   }
 
   get(id: number): RunRecord | undefined {
