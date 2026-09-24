@@ -51,7 +51,7 @@
         </span>
         <div class="run-title">
           <strong>Sweep #{{ run.id }}</strong>
-          <span class="chip">{{ run.trigger === 'schedule' ? 'Scheduled' : run.trigger === 'ingest' ? 'Imported' : 'Manual' }}</span>
+          <span class="chip">{{ run.trigger === 'schedule' ? 'Scheduled' : run.trigger === 'ingest' ? 'Imported' : run.trigger === 'unattended' ? 'Unattended' : 'Manual' }}</span>
         </div>
         <span class="run-stat"><b>{{ sum(run, 'inserted') }}</b> new</span>
         <span class="run-stat hide-sm"><b>{{ sum(run, 'fetched') }}</b> scanned</span>

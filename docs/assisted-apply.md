@@ -30,3 +30,10 @@ Read this file before touching anything under `server/src/services/apply/`,
 10. **Browser isolation.** Automation uses `data/browser-profile`, never the owner's own profile.
 11. **Documents** come from the base resume (`RESUME_PATH`, re-importable in Settings) and only
     select, reorder or trim true content. The UI shows exactly what will be sent.
+12. **Unattended preparation stops at `review`.** `npm run auto-prepare` (`AutoPrepareService`) may
+    create and tailor applications with nobody watching, and nothing more. Every application it
+    creates ends in `review` or `failed`, with `approvedAt` null. It never approves, previews, fills,
+    opens or submits, and never opens a job-board or employer page. It is off until the owner turns it
+    on. It only runs once first-run setup is finished, and it re-checks the kill switch before each job.
+    It never selects a job that has had any application before, and it leaves the job's status alone
+    until the owner approves. Everything it does is in the audit log under the `scheduler` actor.

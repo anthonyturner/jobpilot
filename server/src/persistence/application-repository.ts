@@ -75,6 +75,11 @@ export class ApplicationRepository {
     return row ? toApplication(row) : undefined;
   }
 
+  /** Applications being tailored or waiting for the owner's review. */
+  countWaitingForReview(): number {
+    return (this.db.prepare(`SELECT COUNT(*) AS n FROM applications WHERE status IN ('preparing', 'review')`).get() as { n: number }).n;
+  }
+
   list(): Application[] {
     return (this.db.prepare('SELECT * FROM applications ORDER BY updated_at DESC LIMIT 300').all() as unknown as Row[]).map(toApplication);
   }

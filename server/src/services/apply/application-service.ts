@@ -6,7 +6,7 @@ import { conflict, forbidden, notFound } from '../../domain/errors.js';
 import type { Job } from '../../domain/job.js';
 import { resumeCorpus, type Resume } from '../../domain/resume.js';
 import type { ApplicationRepository } from '../../persistence/application-repository.js';
-import type { AuditRepository } from '../../persistence/audit-repository.js';
+import type { AuditActor, AuditRepository } from '../../persistence/audit-repository.js';
 import type { JobRepository } from '../../persistence/job-repository.js';
 import type { Logger } from '../aggregation-service.js';
 import type { ApplicantStore } from '../applicant-store.js';
@@ -27,6 +27,13 @@ export interface ApplicationServiceDeps {
   automation: FormAutomation;
   dataDir: string;
   log: Logger;
+}
+
+export interface CreateOptions {
+  /** Who the audit log records as starting the application. */
+  actor?: AuditActor | undefined;
+  /** Leave the job's own status alone; approve() moves it to "applying" instead. */
+  keepJobStatus?: boolean | undefined;
 }
 
 export interface PacketEdit {
@@ -64,6 +71,7 @@ const SOURCE_NAMES: Record<Job['primarySource'], string> = {
  */
 export class ApplicationService {
   private readonly busy = new Set<string>();
+  private readonly preparing = new Map<string, Promise<void>>();
 
   constructor(private readonly deps: ApplicationServiceDeps) {}
 
@@ -118,8 +126,9 @@ export class ApplicationService {
     return { ...app, job: this.deps.jobs.get(app.jobId) ?? null };
   }
 
-  /** Starts (or returns the existing) application for a job. Tailoring runs in the background. */
-  create(jobId: string): Application {
+  /** Starts (or returns the existing) application for a job. Tailoring runs in the background; see whenPrepared(). */
+  create(jobId: string, options: CreateOptions = {}): Application {
+    const actor = options.actor ?? 'user';
     const job = this.deps.jobs.get(jobId);
     if (!job) throw notFound('Job not found');
     const existing = this.deps.applications.activeForJob(jobId);
@@ -127,19 +136,24 @@ export class ApplicationService {
     if (!this.deps.store.getResume()) throw conflict('Import your base resume in Settings first.');
 
     const app = this.deps.applications.create(jobId, job.applyUrl);
-    if (job.status === 'new' || job.status === 'saved') {
-      this.deps.jobs.update(jobId, { status: 'applying' });
-      this.deps.audit.record('user', 'job.status', jobId, `${job.status} -> applying`);
-    }
-    this.deps.audit.record('user', 'application.created', jobId);
-    void this.prepare(app.id);
+    if (!options.keepJobStatus) this.markJobApplying(job, actor);
+    this.deps.audit.record(actor, 'application.created', jobId);
+    this.startPreparing(app.id);
+    return app;
+  }
+
+  /** Resolves once any tailoring in progress for the application has finished. */
+  async whenPrepared(id: string): Promise<Application> {
+    await this.preparing.get(id);
+    const app = this.deps.applications.get(id);
+    if (!app) throw notFound('Application not found');
     return app;
   }
 
   regenerate(id: string): Application {
     const app = this.require(id, EDITABLE, 'Only an unsent application can be regenerated.');
     this.deps.applications.update(app.id, { status: 'preparing', approvedAt: null, note: '' });
-    void this.prepare(app.id);
+    this.startPreparing(app.id);
     return this.deps.applications.get(id)!;
   }
 
@@ -174,6 +188,8 @@ export class ApplicationService {
       throw conflict('Check the flagged terms first, then approve with them acknowledged.');
     }
     this.deps.audit.record('user', 'application.approved', app.jobId, app.packet!.ungrounded.length ? `flags acknowledged: ${app.packet!.ungrounded.join(', ')}` : '');
+    const job = this.deps.jobs.get(app.jobId);
+    if (job) this.markJobApplying(job, 'user');
     return this.deps.applications.update(id, { status: 'approved', approvedAt: new Date().toISOString() });
   }
 
@@ -293,7 +309,7 @@ export class ApplicationService {
       await this.deps.automation.closeAll();
       this.deps.audit.record('user', 'automation.disabled', null, 'Kill switch engaged');
     } else {
-      this.deps.audit.record('user', 'automation.updated', null, JSON.stringify(saved.modes));
+      this.deps.audit.record('user', 'automation.updated', null, JSON.stringify({ modes: saved.modes, autoPrepare: saved.autoPrepare }));
     }
     return saved;
   }
@@ -316,6 +332,13 @@ export class ApplicationService {
 
   // ---- Internals -------------------------------------------------------
 
+  private startPreparing(id: string): void {
+    const run = this.prepare(id)
+      .catch((error: unknown) => this.deps.log.error(`Preparing application ${id} crashed: ${error instanceof Error ? error.message : String(error)}`))
+      .finally(() => this.preparing.delete(id));
+    this.preparing.set(id, run);
+  }
+
   private async prepare(id: string): Promise<void> {
     const app = this.deps.applications.get(id)!;
     try {
@@ -328,6 +351,7 @@ export class ApplicationService {
     } catch (error) {
       this.deps.log.warn(`Preparing application ${id} failed: ${(error as Error).message}`);
       this.deps.applications.update(id, { status: 'failed', note: (error as Error).message.slice(0, 400) });
+      this.deps.audit.record('agent', 'application.failed', app.jobId, (error as Error).message.slice(0, 400));
     }
   }
 
@@ -392,6 +416,12 @@ export class ApplicationService {
       note: clean ? '' : outcome.blockers[0] ?? 'Some required questions need your answer.',
       files: { ...app.files, screenshots: outcome.screenshot ? [...app.files.screenshots, outcome.screenshot].slice(-20) : app.files.screenshots },
     });
+  }
+
+  private markJobApplying(job: Job, actor: AuditActor): void {
+    if (job.status !== 'new' && job.status !== 'saved') return;
+    this.deps.jobs.update(job.id, { status: 'applying' });
+    this.deps.audit.record(actor, 'job.status', job.id, `${job.status} -> applying`);
   }
 
   private markJobApplied(jobId: string, how: 'manual' | 'automated'): void {

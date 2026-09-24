@@ -15,6 +15,7 @@
     "test": "npm test -w server",
     "typecheck": "npm run typecheck -w server",
     "sync": "npm run sync -w server",
+    "auto-prepare": "npm run auto-prepare -w server",
     "prepare": "husky"
   },
   "devDependencies": {

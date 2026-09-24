@@ -189,6 +189,18 @@ export class JobRepository {
     return row ? toJob(row) : undefined;
   }
 
+  /** Open listings at or above `minScore` that have never had an application of any status, best first. */
+  listPrepareCandidates(minScore: number, limit: number): Job[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM jobs WHERE status IN ('new', 'saved') AND score >= ?
+           AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.job_id = jobs.id)
+         ORDER BY score DESC, first_seen_at DESC LIMIT ?`,
+      )
+      .all(minScore, limit) as Row[];
+    return rows.map(toJob);
+  }
+
   update(id: string, patch: JobPatch, now = new Date().toISOString()): Job | undefined {
     const sets: string[] = ['updated_at = :now'];
     const params: Record<string, SQLInputValue> = { id, now };

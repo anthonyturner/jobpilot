@@ -28,6 +28,21 @@
           <input class="input" type="number" min="0" max="720" [ngModel]="auto.sameCompanyGapHours" (change)="updateAutomation({ sameCompanyGapHours: +$any($event.target).value })" /></label>
       </div>
       <p class="hint">"Fill only" never presses submit: you review the filled form and send it yourself. Even with submit allowed, every application needs your approval and the company name typed in. Other sites always fall back to you applying with the prepared documents.</p>
+
+      <div class="subhead">
+        <h3>Prepare applications unattended</h3>
+        <p class="hint">For <code>npm run auto-prepare</code> on a schedule: it looks for new jobs, then drafts a resume and cover letter for your best new matches. They wait under Applications for you to approve, edit or cancel. It never approves, fills or submits anything.</p>
+      </div>
+      <label class="consent">
+        <button type="button" class="switch" [class.on]="auto.autoPrepare.enabled" (click)="setAutoPrepare({ enabled: !auto.autoPrepare.enabled })" [attr.aria-pressed]="auto.autoPrepare.enabled" aria-label="Prepare applications unattended"></button>
+        <span><b>{{ auto.autoPrepare.enabled ? 'On' : 'Off' }}</b><br /><span class="muted">Each draft uses your Claude login and can cost up to about $2.</span></span>
+      </label>
+      <div class="fields two limits">
+        <label><span class="label">Keep this many waiting for review (1–10)</span>
+          <input class="input" type="number" min="1" max="10" [ngModel]="auto.autoPrepare.topN" (change)="setAutoPrepare({ topN: +$any($event.target).value })" /></label>
+        <label><span class="label">Only jobs scoring at least (0–100)</span>
+          <input class="input" type="number" min="0" max="100" [ngModel]="auto.autoPrepare.minScore" (change)="setAutoPrepare({ minScore: +$any($event.target).value })" /></label>
+      </div>
     }
   </section>
 

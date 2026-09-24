@@ -15,12 +15,13 @@ server/                 Node 24 + TypeScript API (Fastify, node:sqlite, node-cro
     resume/             .docx → structured resume (the only facts tailoring may use)
     tailoring/          headless Claude (no tools) → packet; id validation + grounding check
     documents/          HTML templates → PDF via local Chrome (JS off, network blocked)
-    apply/              application state machine + guardrails, field matcher, form filler, ATS adapters
+    apply/              application state machine + guardrails, unattended preparation, field matcher, form filler, ATS adapters
     setup/              first-run state and resume-based profile suggestions
     credential-store.ts API keys: .env first, else data/credentials.json; write-only over the API
   src/integrations/     claude.exe runner (no shell), Chrome discovery
   src/persistence/      SQLite repositories and migrations (append-only audit_log)
   src/http/             routes, security hooks, validation, app factory
+  src/cli/              one-off commands for Task Scheduler: sync-once (sweep), prepare-once (sweep + tailor to review)
   src/composition.ts    composition root: the ONLY place concrete classes are wired
   test/                 node:test suites (run with tsx)
 web/                    Angular 21 UI (standalone components, signals, zoneless)

@@ -54,6 +54,28 @@ Scheduled sweeps only run while JobPilot is running. To start it hidden at login
 
 On macOS or Linux, run `npm run serve` from a login item, `launchd` or a `systemd --user` service.
 
+### Have applications drafted for you (optional)
+
+`npm run auto-prepare` looks for new jobs, then drafts a tailored resume and cover letter for your
+best new matches. By the time you open **Applications**, they are waiting for you to approve, edit
+or cancel. It stops there: it never approves, fills or submits anything.
+
+1. Turn it on in **Settings → Applying → Automation**. Choose how many drafts to keep waiting (3 by
+   default, at most 10) and the lowest score to consider (75 by default). Each run only tops the
+   queue back up to that number. It skips jobs without a real description, jobs you have started
+   or cancelled before, and companies you applied to recently. It drafts at most one job per
+   company per run.
+2. Each draft uses your own Claude Code login, and can cost up to about $2 (two attempts at
+   `TAILOR_MAX_BUDGET_USD`, $1.00 each by default).
+3. To run it daily, create a task in Windows Task Scheduler that runs `npm.cmd run auto-prepare`
+   in the JobPilot folder. Choose **Run only when user is logged on**: Claude Code needs your
+   login, which a task set to "run whether user is logged on or not" may not see. If the task
+   cannot find Claude, set `CLAUDE_BIN` in `.env` to the full path of `claude.exe`.
+
+The command exits with an error code when the search fails, or when every draft fails (for
+example, when Claude is not signed in), so Task Scheduler can show that the run failed. Turning
+automation off in Settings stops a run before its next job.
+
 ## Configuration
 
 Most settings live in the app (**Settings**). For headless or scripted setups you can also use a

@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, inject, output, signal } from '@ang
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/api.service';
 import { timeAgo } from '../../core/format';
-import type { Applicant, AtsId, AtsMode, Automation, ResumeDoc } from '../../core/models';
+import type { Applicant, AtsId, AtsMode, AutoPrepare, Automation, ResumeDoc } from '../../core/models';
 import { Icon } from '../../shared/icon';
 
 type TriKey = 'workAuthorizedUS' | 'requiresSponsorship' | 'willingToRelocate';
@@ -137,12 +137,19 @@ export class ApplySettings {
         this.automation.set(saved);
         if (patch.enabled === false) this.notify.emit({ kind: 'good', text: 'Automation stopped. Any open JobPilot browser windows were closed.' });
       },
-      error: () => this.notify.emit({ kind: 'bad', text: 'Could not save automation settings.' }),
+      error: () => {
+        this.notify.emit({ kind: 'bad', text: 'Could not save automation settings.' });
+        this.api.automation().subscribe((a) => this.automation.set(a));
+      },
     });
   }
 
   protected setMode(ats: AtsId, mode: AtsMode): void {
     this.updateAutomation({ modes: { ...this.automation()!.modes, [ats]: mode } });
+  }
+
+  protected setAutoPrepare(patch: Partial<AutoPrepare>): void {
+    this.updateAutomation({ autoPrepare: { ...this.automation()!.autoPrepare, ...patch } });
   }
 
   protected ago(iso: string): string {
