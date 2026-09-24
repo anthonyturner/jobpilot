@@ -1,0 +1,20 @@
+# Dependencies and builds
+node_modules/
+dist/
+.angular/
+coverage/
+
+# Personal data and secrets: never commit
+data/
+.env
+.env.*
+!.env.example
+*.docx
+*.pdf
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+*.log

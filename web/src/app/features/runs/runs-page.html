@@ -1,0 +1,106 @@
+<header class="page-head rise">
+  <div>
+    <p class="eyebrow"><app-icon name="activity" [size]="13" /> Sweeps</p>
+    <h1>Job-board sweeps</h1>
+    <p class="sub">Every scheduled or manual run, what each board returned, and what was kept.</p>
+  </div>
+  <button class="btn primary" type="button" (click)="tracker.start()" [disabled]="tracker.running()">
+    <app-icon name="refresh" [size]="14" [class.spin]="tracker.running()" /> {{ tracker.running() ? 'Sweeping…' : 'Sweep now' }}
+  </button>
+</header>
+
+<section class="overview rise" style="animation-delay: 60ms">
+  <article class="glass schedule-card">
+    <div class="card-head">
+      <h2><app-icon name="calendar" [size]="16" /> Schedule</h2>
+      <a class="btn ghost sm" routerLink="/settings" fragment="schedule">Edit</a>
+    </div>
+    @if (schedule(); as s) {
+      <ul class="schedule-list">
+        @for (item of s.schedules; track item.id) {
+          <li [class.off]="!item.enabled">
+            <span class="dot"></span>
+            <span class="sched-label">{{ item.label }}</span>
+            <code>{{ item.cron }}</code>
+            <span class="next">{{ item.enabled ? until(item.nextRunAt) : 'off' }}</span>
+          </li>
+        }
+      </ul>
+      <p class="muted small">Times are {{ s.timezone }}. Sweeps run while the JobPilot server is running.</p>
+    }
+  </article>
+  <article class="glass kpi"><p class="kpi-label">Sweeps logged</p><p class="kpi-value">{{ totals().runs }}</p></article>
+  <article class="glass kpi"><p class="kpi-label">Listings found</p><p class="kpi-value">{{ totals().found }}</p></article>
+  <article class="glass kpi">
+    <p class="kpi-label">Clean runs</p>
+    <p class="kpi-value">{{ totals().successRate === null ? '—' : totals().successRate + '%' }}</p>
+  </article>
+</section>
+
+<section class="runs">
+  @for (run of runs(); track run.id; let i = $index) {
+    <article class="run glass rise" [style.animation-delay.ms]="80 + i * 30" [class.open]="expanded() === run.id">
+      <button class="run-head" type="button" (click)="toggle(run.id)" [attr.aria-expanded]="expanded() === run.id">
+        <span class="status {{ run.status }}">
+          @switch (run.status) {
+            @case ('running') { <app-icon name="refresh" [size]="14" class="spin" /> }
+            @case ('succeeded') { <app-icon name="check" [size]="14" /> }
+            @case ('partial') { <app-icon name="alert" [size]="14" /> }
+            @default { <app-icon name="x" [size]="14" /> }
+          }
+        </span>
+        <div class="run-title">
+          <strong>Sweep #{{ run.id }}</strong>
+          <span class="chip">{{ run.trigger === 'schedule' ? 'Scheduled' : run.trigger === 'ingest' ? 'Imported' : 'Manual' }}</span>
+        </div>
+        <span class="run-stat"><b>{{ sum(run, 'inserted') }}</b> new</span>
+        <span class="run-stat hide-sm"><b>{{ sum(run, 'fetched') }}</b> scanned</span>
+        @if (failures(run)) {
+          <span class="chip bad hide-sm">{{ failures(run) }} failed</span>
+        }
+        <span class="run-when muted">{{ ago(run.startedAt) }} · {{ duration(run) }}</span>
+        <app-icon class="chev" name="chevronRight" [size]="16" />
+      </button>
+
+      @if (expanded() === run.id) {
+        <div class="run-body">
+          @if (run.error) {
+            <p class="run-error"><app-icon name="alert" [size]="14" /> {{ run.error }}</p>
+          }
+          <table>
+            <thead>
+              <tr><th>Source</th><th>Scanned → kept</th><th class="num">New</th><th class="num">Updated</th><th class="num">Time</th></tr>
+            </thead>
+            <tbody>
+              @for (row of rows(run); track row.id) {
+                <tr [class.skipped]="row.stats.skipped">
+                  <td><span class="src-dot" [style.background]="colors[row.id]"></span>{{ labels[row.id] }}</td>
+                  <td>
+                    @if (row.stats.skipped) {
+                      <span class="muted">{{ row.stats.skipped }}</span>
+                    } @else if (row.stats.error) {
+                      <span class="err">{{ row.stats.error }}</span>
+                    } @else {
+                      <div class="funnel">
+                        <div class="funnel-bar"><span [style.width.%]="row.stats.fetched ? (row.stats.kept / row.stats.fetched) * 100 : 0"></span></div>
+                        <span class="muted">{{ row.stats.fetched }} → {{ row.stats.kept }}</span>
+                      </div>
+                    }
+                  </td>
+                  <td class="num">{{ row.stats.skipped ? '' : row.stats.inserted }}</td>
+                  <td class="num">{{ row.stats.skipped ? '' : row.stats.updated }}</td>
+                  <td class="num muted">{{ row.stats.skipped ? '' : ms(row.stats.durationMs) }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </article>
+  } @empty {
+    <div class="glass empty">
+      <app-icon name="activity" [size]="26" />
+      <p>No sweeps yet. Run one now or wait for the schedule.</p>
+    </div>
+  }
+</section>

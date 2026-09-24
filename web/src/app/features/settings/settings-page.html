@@ -1,0 +1,186 @@
+<header class="page-head rise">
+  <div>
+    <p class="eyebrow"><app-icon name="sliders" [size]="13" /> Settings</p>
+    <h1>Search profile</h1>
+    <p class="sub">What JobPilot looks for and how it ranks what it finds. Saving rescores every stored job.</p>
+  </div>
+</header>
+
+@if (profile(); as p) {
+  <div class="grid">
+    <section class="card glass rise">
+      <h2><app-icon name="target" [size]="16" /> About you</h2>
+      <div class="fields two">
+        <label><span class="label">Name</span><input class="input" [ngModel]="p.fullName" (ngModelChange)="edit('fullName', $event)" maxlength="120" /></label>
+        <label><span class="label">Home base</span><input class="input" [ngModel]="p.primaryLocation" (ngModelChange)="edit('primaryLocation', $event)" maxlength="120" /></label>
+        <label class="span"><span class="label">Headline</span><input class="input" [ngModel]="p.headline" (ngModelChange)="edit('headline', $event)" maxlength="200" /></label>
+      </div>
+      <div class="field">
+        <span class="label">Work arrangement</span>
+        <div class="segmented">
+          <button type="button" [class.active]="p.remotePreference === 'remote-only'" (click)="edit('remotePreference', 'remote-only')">Remote only</button>
+          <button type="button" [class.active]="p.remotePreference === 'remote-or-hybrid'" (click)="edit('remotePreference', 'remote-or-hybrid')">Remote or hybrid</button>
+          <button type="button" [class.active]="p.remotePreference === 'any'" (click)="edit('remotePreference', 'any')">Anything nearby</button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="label">Preferred locations</span>
+        <app-chip-input [values]="p.preferredLocations" (valuesChange)="edit('preferredLocations', $event)" placeholder="City, ST" />
+      </div>
+    </section>
+
+    <section class="card glass rise" style="animation-delay: 40ms">
+      <h2><app-icon name="trending" [size]="16" /> Ranking</h2>
+      <div class="fields two">
+        <label>
+          <span class="label">Salary floor (USD / year)</span>
+          <input class="input" type="number" min="0" step="5000" [ngModel]="p.minSalary" (ngModelChange)="setMinSalary($event)" placeholder="No floor" />
+        </label>
+        <label>
+          <span class="label">Ignore listings older than</span>
+          <select class="select" [ngModel]="p.maxAgeDays" (ngModelChange)="edit('maxAgeDays', +$event)">
+            @for (d of [3, 7, 14, 30, 60]; track d) { <option [ngValue]="d">{{ d }} days</option> }
+          </select>
+        </label>
+      </div>
+      <div class="field">
+        <span class="label">Keep listings scoring at least <b class="accent">{{ p.minScoreToKeep }}</b></span>
+        <input class="range" type="range" min="0" max="80" step="5" [ngModel]="p.minScoreToKeep" (ngModelChange)="edit('minScoreToKeep', +$event)" />
+        <p class="hint">Anything weaker is discarded during a sweep, so the board stays focused.</p>
+      </div>
+      <div class="field">
+        <span class="label">Exclude keywords</span>
+        <app-chip-input [values]="p.excludeKeywords" (valuesChange)="edit('excludeKeywords', $event)" placeholder="e.g. internship" />
+        <p class="hint">Heavily penalised in titles, lightly in descriptions.</p>
+      </div>
+    </section>
+
+    <section class="card glass wide rise" style="animation-delay: 80ms">
+      <h2><app-icon name="search" [size]="16" /> What to search for</h2>
+      <div class="fields two">
+        <div class="field">
+          <span class="label">Search queries</span>
+          <app-chip-input [values]="p.searchQueries" (valuesChange)="edit('searchQueries', $event)" [max]="12" placeholder="e.g. Angular .NET developer" />
+          <p class="hint">Sent to each job board. Top queries are used first, and paid APIs only use the first two.</p>
+        </div>
+        <div class="field">
+          <span class="label">Target titles</span>
+          <app-chip-input [values]="p.targetTitles" (valuesChange)="edit('targetTitles', $event)" [max]="30" placeholder="e.g. full stack" />
+          <p class="hint">A title containing any of these earns the full title score.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card glass wide rise" style="animation-delay: 120ms">
+      <div class="card-head">
+        <h2><app-icon name="sparkles" [size]="16" /> Skills</h2>
+        <p class="hint inline">Click a skill to cycle its weight: <span class="w w1">Nice to have</span> <span class="w w2">Core</span> <span class="w w3">Signature</span></p>
+      </div>
+      <div class="skills">
+        @for (skill of sortedSkills(); track skill.name) {
+          <span class="skill w{{ skill.weight }}">
+            <button type="button" class="skill-main" (click)="cycleWeight(skill)" [title]="weightLabels[skill.weight] + (skill.aliases.length ? ' · also matches ' + skill.aliases.join(', ') : '')">
+              <span class="pips">@for (n of [1, 2, 3]; track n) { <i [class.on]="n <= skill.weight"></i> }</span>
+              {{ skill.name }}
+            </button>
+            <button type="button" class="skill-x" (click)="removeSkill(skill)" [attr.aria-label]="'Remove ' + skill.name"><app-icon name="x" [size]="11" [stroke]="2.5" /></button>
+          </span>
+        }
+        <form class="add-skill" (submit)="addSkill(); $event.preventDefault()">
+          <input class="input" placeholder="Add a skill" [ngModel]="newSkill()" (ngModelChange)="newSkill.set($event)" name="newSkill" maxlength="60" />
+          <button class="btn icon" type="submit" aria-label="Add skill"><app-icon name="plus" [size]="16" /></button>
+        </form>
+      </div>
+    </section>
+
+    <section class="card glass wide rise" style="animation-delay: 160ms">
+      <h2><app-icon name="globe" [size]="16" /> Job sources</h2>
+      <div class="sources">
+        @for (s of sources(); track s.id) {
+          <article class="source" [class.off]="!sourceOn(s.id)">
+            <span class="src-dot" [style.background]="colors[s.id]"></span>
+            <div class="source-text">
+              <div class="source-title">
+                <strong>{{ s.name }}</strong>
+                @if (s.kind === 'agent') { <span class="chip accent"><app-icon name="bot" [size]="11" /> via Claude</span> }
+                <span class="chip" [class.good]="s.configured" [class.warn]="!s.configured">{{ s.configured ? 'Ready' : 'Needs setup' }}</span>
+              </div>
+              <p>{{ s.configured ? s.notes : s.detail }}</p>
+            </div>
+            <button type="button" class="switch" [class.on]="sourceOn(s.id)" (click)="toggleSource(s.id)" [attr.aria-pressed]="sourceOn(s.id)" [attr.aria-label]="'Use ' + s.name"></button>
+          </article>
+        }
+      </div>
+      <div class="fields two boards">
+        <div class="field">
+          <span class="label">Greenhouse companies you follow</span>
+          <app-chip-input [values]="p.companyBoards.greenhouse" (valuesChange)="setBoards('greenhouse', $event)" placeholder="board slug, e.g. figma" [maxLength]="60" />
+        </div>
+        <div class="field">
+          <span class="label">Lever companies you follow</span>
+          <app-chip-input [values]="p.companyBoards.lever" (valuesChange)="setBoards('lever', $event)" placeholder="board slug, e.g. netflix" [maxLength]="60" />
+        </div>
+      </div>
+    </section>
+
+    <section class="card glass wide rise" id="keys" style="animation-delay: 180ms">
+      <h2><app-icon name="shield" [size]="16" /> API keys</h2>
+      <p class="hint top">Stored only on this computer (data/credentials.json, or your .env). Saved keys are never shown again.</p>
+      <app-credentials-form (changed)="refreshSources()" />
+    </section>
+
+    <section class="card glass wide rise" id="schedule" style="animation-delay: 200ms">
+      <div class="card-head">
+        <h2><app-icon name="calendar" [size]="16" /> Sweep schedule</h2>
+        <div class="row">
+          <button class="btn sm" type="button" (click)="addSchedule()"><app-icon name="plus" [size]="13" /> Add</button>
+          <button class="btn primary sm" type="button" (click)="saveSchedules()" [disabled]="!schedulesDirty()">Save schedule</button>
+        </div>
+      </div>
+      <div class="schedules">
+        @for (s of schedules(); track s.id; let i = $index) {
+          <div class="schedule" [class.off]="!s.enabled">
+            <button type="button" class="switch" [class.on]="s.enabled" (click)="updateSchedule(i, { enabled: !s.enabled })" [attr.aria-pressed]="s.enabled" aria-label="Enabled"></button>
+            <input class="input" [ngModel]="s.label" (ngModelChange)="updateSchedule(i, { label: $event })" maxlength="60" aria-label="Label" />
+            <select class="select" [ngModel]="s.cron" (ngModelChange)="updateSchedule(i, { cron: $event })" aria-label="Preset">
+              @for (preset of presets; track preset.cron) { <option [value]="preset.cron">{{ preset.label }}</option> }
+              @if (!presets.some(pp => pp.cron === s.cron)) { <option [value]="s.cron">Custom</option> }
+            </select>
+            <input class="input mono" [ngModel]="s.cron" (ngModelChange)="updateSchedule(i, { cron: $event })" aria-label="Cron expression" />
+            <span class="next">{{ s.enabled && !schedulesDirty() ? until(s.nextRunAt) : '' }}</span>
+            <button class="btn ghost icon sm danger" type="button" (click)="removeSchedule(i)" aria-label="Remove schedule"><app-icon name="trash" [size]="14" /></button>
+          </div>
+        }
+      </div>
+      <p class="hint">Cron format: minute hour day month weekday, in {{ timezone() }}. Sweeps run while the server is running.</p>
+    </section>
+
+    <section class="card glass wide guard rise" style="animation-delay: 240ms">
+      <h2><app-icon name="shield" [size]="16" /> Guardrails in force</h2>
+      <ul>
+        <li>The server only listens on this computer (127.0.0.1). Other websites can't read or change your data.</li>
+        <li>Job boards are reached only through official APIs or connectors, rate-limited, and never scraped.</li>
+        <li>Job descriptions are sanitised before display. Links open in a new tab without referrer data.</li>
+        <li>Every status change is written to an append-only activity log.</li>
+        <li>Tailored resumes only reorder your own resume content. Anything new Claude writes is checked against your resume, and unsupported claims are flagged.</li>
+        <li>Nothing is sent without your approval. Automatic submission is off by default, needs the company name typed in, is capped per day, and is attempted at most once.</li>
+      </ul>
+    </section>
+  </div>
+
+  <div class="section-divider" id="applying"><h2>Applying</h2><p>Resume, form answers and automation guardrails</p></div>
+  <app-apply-settings (notify)="flash($event.kind, $event.text)" />
+
+  <div class="savebar" [class.show]="dirty()">
+    <span>You have unsaved changes</span>
+    <button class="btn primary" type="button" (click)="save()" [disabled]="saving()">
+      <app-icon name="save" [size]="14" /> {{ saving() ? 'Saving…' : 'Save and rescore' }}
+    </button>
+  </div>
+} @else {
+  <div class="grid"><div class="skeleton" style="height: 320px"></div><div class="skeleton" style="height: 320px"></div></div>
+}
+
+@if (toast(); as t) {
+  <div class="toast {{ t.kind }}" role="status"><app-icon [name]="t.kind === 'good' ? 'check' : 'alert'" [size]="15" /> {{ t.text }}</div>
+}

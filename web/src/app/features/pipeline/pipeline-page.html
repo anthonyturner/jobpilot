@@ -1,0 +1,54 @@
+<header class="page-head rise">
+  <div>
+    <p class="eyebrow"><app-icon name="kanban" [size]="13" /> Pipeline</p>
+    <h1>Your applications</h1>
+    <p class="sub">Drag cards between stages. {{ totalTracked() }} tracked · {{ appliedCount() }} submitted.</p>
+  </div>
+  <a class="btn" routerLink="/jobs"><app-icon name="sparkles" [size]="14" /> Find more matches</a>
+</header>
+
+<div class="board" cdkDropListGroup>
+  @for (col of columns; track col.status; let i = $index) {
+    <section class="lane glass rise" [style.animation-delay.ms]="i * 50" [style.--lane]="col.accent">
+      <header class="lane-head">
+        <span class="lane-icon"><app-icon [name]="col.icon" [size]="15" /></span>
+        <div>
+          <h2>{{ meta[col.status].label }}</h2>
+          <p>{{ col.hint }}</p>
+        </div>
+        <span class="lane-count">{{ lanes()[col.status]?.length ?? 0 }}</span>
+      </header>
+
+      <div class="lane-body" cdkDropList [cdkDropListData]="lanes()[col.status] ?? []" (cdkDropListDropped)="drop($event, col.status)">
+        @if (loading()) {
+          <div class="skeleton" style="height: 96px"></div>
+        }
+        @for (job of lanes()[col.status] ?? []; track job.id) {
+          <article class="card" cdkDrag [cdkDragData]="job">
+            <div class="card-top">
+              <app-company-avatar [name]="job.company" [logo]="job.companyLogo" [size]="34" />
+              <div class="card-text">
+                <h3>{{ job.title }}</h3>
+                <p>{{ job.company }}</p>
+              </div>
+              <app-score-ring [score]="job.score" [size]="36" />
+            </div>
+            <div class="card-meta">
+              @if (salary(job); as s) {
+                <span class="chip">{{ s }}</span>
+              }
+              <span class="muted">{{ ago(job) }}</span>
+              <a class="open" [href]="job.applyUrl" target="_blank" rel="noopener noreferrer" (mousedown)="$event.stopPropagation()" aria-label="Open posting">
+                <app-icon name="external" [size]="13" />
+              </a>
+            </div>
+          </article>
+        } @empty {
+          @if (!loading()) {
+            <p class="lane-empty">Drop a job here</p>
+          }
+        }
+      </div>
+    </section>
+  }
+</div>

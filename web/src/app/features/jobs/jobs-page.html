@@ -1,0 +1,134 @@
+<header class="page-head rise">
+  <div>
+    <p class="eyebrow"><app-icon name="sparkles" [size]="13" /> Matches</p>
+    <h1>{{ greeting }}, {{ firstName() }}</h1>
+    <p class="sub">
+      @if (stats(); as s) {
+        @if (s.newToday > 0) {
+          <strong class="grad">{{ s.newToday }} new {{ s.newToday === 1 ? 'match' : 'matches' }}</strong> landed today, ranked against your resume.
+        } @else {
+          Everything's up to date. New matches appear here after each sweep.
+        }
+      } @else {
+        Loading your matches…
+      }
+    </p>
+  </div>
+</header>
+
+<section class="stats rise" style="animation-delay: 60ms" aria-label="Summary">
+  <article class="stat">
+    <span class="stat-icon a"><app-icon name="layers" [size]="18" /></span>
+    <div><p class="stat-label">Active listings</p><p class="stat-value">{{ stats()?.active ?? '—' }}</p></div>
+  </article>
+  <article class="stat">
+    <span class="stat-icon b"><app-icon name="zap" [size]="18" /></span>
+    <div><p class="stat-label">New today</p><p class="stat-value">{{ stats()?.newToday ?? '—' }}</p></div>
+  </article>
+  <article class="stat">
+    <span class="stat-icon c"><app-icon name="target" [size]="18" /></span>
+    <div><p class="stat-label">Strong matches</p><p class="stat-value">{{ stats()?.strongMatches ?? '—' }}<small>75+</small></p></div>
+  </article>
+  <article class="stat">
+    <span class="stat-icon d"><app-icon name="globe" [size]="18" /></span>
+    <div><p class="stat-label">Remote roles</p><p class="stat-value">{{ stats()?.remote ?? '—' }}</p></div>
+  </article>
+</section>
+
+<section class="toolbar glass rise" style="animation-delay: 120ms" aria-label="Filters">
+  <label class="search">
+    <app-icon name="search" [size]="16" />
+    <span class="sr-only">Search jobs</span>
+    <input class="input" type="search" placeholder="Search title, company or skill…" [ngModel]="search()" (ngModelChange)="search.set($event)" maxlength="100" />
+  </label>
+
+  <div class="segmented" role="group" aria-label="Work arrangement">
+    <button type="button" [class.active]="remote() === ''" (click)="remote.set('')">Any</button>
+    <button type="button" [class.active]="remote() === 'remote'" (click)="remote.set('remote')">Remote</button>
+    <button type="button" [class.active]="remote() === 'hybrid'" (click)="remote.set('hybrid')">Hybrid</button>
+    <button type="button" [class.active]="remote() === 'onsite'" (click)="remote.set('onsite')">On-site</button>
+  </div>
+
+  <div class="segmented" role="group" aria-label="Minimum match">
+    <button type="button" [class.active]="minScore() === 0" (click)="minScore.set(0)">All</button>
+    <button type="button" [class.active]="minScore() === 50" (click)="minScore.set(50)">50+</button>
+    <button type="button" [class.active]="minScore() === 65" (click)="minScore.set(65)">65+</button>
+    <button type="button" [class.active]="minScore() === 80" (click)="minScore.set(80)">80+</button>
+  </div>
+
+  <label class="compact">
+    <span class="sr-only">Source</span>
+    <select class="select" [ngModel]="source()" (ngModelChange)="source.set($event)">
+      <option value="">All sources</option>
+      @for (id of sourceIds; track id) {
+        <option [value]="id">{{ sourceLabels[id] }}</option>
+      }
+    </select>
+  </label>
+
+  <label class="compact">
+    <span class="sr-only">Sort</span>
+    <select class="select" [ngModel]="sort()" (ngModelChange)="sort.set($event)">
+      <option value="score">Best match</option>
+      <option value="posted">Newest posted</option>
+      <option value="seen">Recently found</option>
+    </select>
+  </label>
+</section>
+
+<nav class="views rise" style="animation-delay: 160ms" aria-label="Views">
+  @for (v of views; track v.id) {
+    <button type="button" class="view" [class.active]="view() === v.id" (click)="view.set(v.id)">{{ v.label }}</button>
+  }
+  <span class="count">{{ total() }} {{ total() === 1 ? 'job' : 'jobs' }}</span>
+  @if (filtersActive()) {
+    <button type="button" class="btn ghost sm" (click)="clearFilters()"><app-icon name="x" [size]="13" /> Clear</button>
+  }
+</nav>
+
+<div class="split" [class.has-detail]="selectedId()">
+  <div class="list" role="listbox" aria-label="Jobs">
+    @if (loading() && jobs().length === 0) {
+      @for (i of [1, 2, 3, 4, 5]; track i) {
+        <div class="skeleton" style="height: 128px"></div>
+      }
+    } @else if (jobs().length === 0) {
+      <div class="empty glass">
+        <div class="empty-art"><app-icon name="inbox" [size]="28" /></div>
+        <h3>{{ filtersActive() ? 'Nothing matches those filters' : 'No matches yet' }}</h3>
+        <p class="muted">
+          {{ filtersActive() ? 'Try widening your filters.' : 'Run a sweep to pull fresh listings from every enabled job board.' }}
+        </p>
+        @if (filtersActive()) {
+          <button class="btn" type="button" (click)="clearFilters()">Clear filters</button>
+        } @else {
+          <button class="btn primary" type="button" (click)="tracker.start()" [disabled]="tracker.running()">
+            <app-icon name="refresh" [size]="14" [class.spin]="tracker.running()" /> Sweep now
+          </button>
+        }
+      </div>
+    } @else {
+      @for (job of jobs(); track job.id; let i = $index) {
+        <app-job-card
+          [id]="'job-' + job.id"
+          class="rise"
+          [style.animation-delay.ms]="i < 12 ? i * 35 : 0"
+          [job]="job"
+          [selected]="job.id === selectedId()"
+          (pick)="select(job.id)" />
+      }
+      @if (hasMore()) {
+        <button class="btn more" type="button" (click)="loadMore()" [disabled]="loadingMore()">
+          {{ loadingMore() ? 'Loading…' : 'Show more (' + (total() - jobs().length) + ' left)' }}
+        </button>
+      }
+      <p class="hint muted"><kbd>j</kbd> <kbd>k</kbd> to move between jobs · <kbd>Esc</kbd> to close</p>
+    }
+  </div>
+
+  @if (selectedId(); as id) {
+    <aside class="detail" aria-label="Job details">
+      <app-job-detail [jobId]="id" (changed)="onChanged($event)" (closed)="selectedId.set(null)" />
+    </aside>
+  }
+</div>

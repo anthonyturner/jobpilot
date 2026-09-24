@@ -1,0 +1,128 @@
+<div class="grid">
+  <section class="card glass wide rise" id="automation">
+    <div class="card-head">
+      <h2><app-icon name="shield" [size]="16" /> Automation</h2>
+      @if (automation(); as auto) {
+        <button type="button" class="kill" [class.off]="!auto.enabled" (click)="updateAutomation({ enabled: !auto.enabled })" [attr.aria-pressed]="auto.enabled">
+          <span class="kill-dot"></span>{{ auto.enabled ? 'Automation on. Click to stop everything' : 'Automation stopped. Click to resume' }}
+        </button>
+      }
+    </div>
+    @if (automation(); as auto) {
+      <div class="ats-grid">
+        @for (ats of atsList; track ats.id) {
+          <div class="ats">
+            <strong>{{ ats.name }} forms</strong>
+            <div class="segmented" role="group" [attr.aria-label]="ats.name + ' mode'">
+              <button type="button" [class.active]="auto.modes[ats.id] === 'off'" (click)="setMode(ats.id, 'off')">Off</button>
+              <button type="button" [class.active]="auto.modes[ats.id] === 'preview'" (click)="setMode(ats.id, 'preview')">Fill only</button>
+              <button type="button" [class.active]="auto.modes[ats.id] === 'submit'" (click)="setMode(ats.id, 'submit')">Fill + submit on approval</button>
+            </div>
+          </div>
+        }
+      </div>
+      <div class="fields two limits">
+        <label><span class="label">Max automatic submissions per 24h</span>
+          <input class="input" type="number" min="0" max="50" [ngModel]="auto.dailySubmitCap" (change)="updateAutomation({ dailySubmitCap: +$any($event.target).value })" /></label>
+        <label><span class="label">Min hours between applications to one company</span>
+          <input class="input" type="number" min="0" max="720" [ngModel]="auto.sameCompanyGapHours" (change)="updateAutomation({ sameCompanyGapHours: +$any($event.target).value })" /></label>
+      </div>
+      <p class="hint">"Fill only" never presses submit: you review the filled form and send it yourself. Even with submit allowed, every application needs your approval and the company name typed in. Other sites always fall back to you applying with the prepared documents.</p>
+    }
+  </section>
+
+  <section class="card glass rise">
+    <h2><app-icon name="briefcase" [size]="16" /> Base resume</h2>
+    @if (resume(); as r) {
+      <div class="resume-summary">
+        <div><b>{{ r.name }}</b><p class="muted">{{ r.headline }}</p></div>
+        <div class="resume-stats">
+          <span class="chip">{{ r.experience.length }} roles</span>
+          <span class="chip">{{ r.skills.length }} skill groups</span>
+          <span class="chip">{{ r.projects.length }} projects</span>
+        </div>
+        <p class="hint">Imported {{ ago(r.importedAt) }}. Tailored resumes only select and reorder this content.</p>
+      </div>
+    } @else {
+      <p class="muted">No resume imported yet. Tailoring needs it.</p>
+    }
+    <label class="btn primary upload">
+      <input type="file" accept=".docx" (change)="uploadResume($event)" hidden />
+      <app-icon [name]="importing() ? 'refresh' : 'briefcase'" [size]="14" [class.spin]="importing()" /> {{ resume() ? 'Upload a new version (.docx)' : 'Upload resume (.docx)' }}
+    </label>
+    <details class="path-import">
+      <summary>Or import from a file path</summary>
+      <div class="row">
+        <input class="input" [ngModel]="resumePath()" (ngModelChange)="resumePath.set($event)" placeholder="Full path to your .docx" />
+        <button class="btn" type="button" (click)="importResume()" [disabled]="importing() || !resumePath()">Import</button>
+      </div>
+    </details>
+  </section>
+
+  @if (applicant(); as a) {
+    <section class="card glass rise">
+      <h2><app-icon name="target" [size]="16" /> Contact details for forms</h2>
+      <div class="fields two">
+        <label><span class="label">First name</span><input class="input" [ngModel]="a.firstName" (ngModelChange)="edit('firstName', $event)" /></label>
+        <label><span class="label">Last name</span><input class="input" [ngModel]="a.lastName" (ngModelChange)="edit('lastName', $event)" /></label>
+        <label><span class="label">Email</span><input class="input" type="email" [ngModel]="a.email" (ngModelChange)="edit('email', $event)" /></label>
+        <label><span class="label">Phone</span><input class="input" [ngModel]="a.phone" (ngModelChange)="edit('phone', $event)" /></label>
+        <label><span class="label">Location</span><input class="input" [ngModel]="a.location" (ngModelChange)="edit('location', $event)" /></label>
+        <label><span class="label">Current company</span><input class="input" [ngModel]="a.currentCompany" (ngModelChange)="edit('currentCompany', $event)" placeholder="Leave blank if between roles" /></label>
+        <label><span class="label">LinkedIn URL</span><input class="input" [ngModel]="a.linkedin" (ngModelChange)="edit('linkedin', $event)" placeholder="https://linkedin.com/in/…" /></label>
+        <label><span class="label">GitHub URL</span><input class="input" [ngModel]="a.github" (ngModelChange)="edit('github', $event)" /></label>
+        <label class="span"><span class="label">Portfolio URL</span><input class="input" [ngModel]="a.portfolio" (ngModelChange)="edit('portfolio', $event)" /></label>
+      </div>
+    </section>
+
+    <section class="card glass wide rise">
+      <div class="card-head">
+        <h2><app-icon name="check" [size]="16" /> Screening answers</h2>
+        <button class="btn primary sm" type="button" (click)="saveApplicant()" [disabled]="!applicantDirty()"><app-icon name="save" [size]="13" /> Save application details</button>
+      </div>
+      <p class="hint top">Unset answers are never guessed: a form asking about them pauses and asks you.</p>
+      <div class="fields three">
+        @for (f of triFields; track f.key) {
+          <label><span class="label">{{ f.label }}</span>
+            <select class="select" [ngModel]="tri(f.key)" (ngModelChange)="setTri(f.key, $event)">
+              <option value="">Not set (ask me)</option><option value="yes">Yes</option><option value="no">No</option>
+            </select></label>
+        }
+        <label><span class="label">Salary expectation</span><input class="input" [ngModel]="a.salaryExpectation" (ngModelChange)="edit('salaryExpectation', $event)" placeholder="e.g. $130,000–$150,000" /></label>
+        <label><span class="label">Availability / notice</span><input class="input" [ngModel]="a.availability" (ngModelChange)="edit('availability', $event)" placeholder="e.g. Two weeks" /></label>
+        <label><span class="label">"How did you hear about us"</span><input class="input" [ngModel]="a.howDidYouHear" (ngModelChange)="edit('howDidYouHear', $event)" placeholder="Job board" /></label>
+      </div>
+
+      <div class="subhead">
+        <h3>Voluntary self-identification</h3>
+        <p class="hint">Leave blank and JobPilot picks "decline to answer" whenever the form offers it.</p>
+      </div>
+      <div class="fields four">
+        <label><span class="label">Gender</span><input class="input" [ngModel]="a.eeo.gender" (ngModelChange)="setEeo('gender', $event)" placeholder="Decline" /></label>
+        <label><span class="label">Race / ethnicity</span><input class="input" [ngModel]="a.eeo.race" (ngModelChange)="setEeo('race', $event)" placeholder="Decline" /></label>
+        <label><span class="label">Veteran status</span><input class="input" [ngModel]="a.eeo.veteran" (ngModelChange)="setEeo('veteran', $event)" placeholder="Decline" /></label>
+        <label><span class="label">Disability</span><input class="input" [ngModel]="a.eeo.disability" (ngModelChange)="setEeo('disability', $event)" placeholder="Decline" /></label>
+      </div>
+
+      <label class="consent">
+        <button type="button" class="switch" [class.on]="a.acceptDataConsent" (click)="edit('acceptDataConsent', !a.acceptDataConsent)" aria-label="Allow consent boxes"></button>
+        <span><b>Tick required privacy / data-processing consent boxes</b><br /><span class="muted">Off: JobPilot pauses and asks you each time.</span></span>
+      </label>
+
+      <div class="subhead">
+        <h3>Answer bank</h3>
+        <p class="hint">Reused whenever a form question contains the question text. Answers you give on an application can be saved here automatically.</p>
+      </div>
+      <div class="bank">
+        @for (b of a.answerBank; track $index; let i = $index) {
+          <div class="bank-row">
+            <input class="input" [ngModel]="b.question" (ngModelChange)="setBank(i, 'question', $event)" placeholder="Question contains…" maxlength="200" />
+            <input class="input" [ngModel]="b.answer" (ngModelChange)="setBank(i, 'answer', $event)" placeholder="Answer" maxlength="2000" />
+            <button class="btn ghost icon sm danger" type="button" (click)="removeBank(i)" aria-label="Remove"><app-icon name="trash" [size]="14" /></button>
+          </div>
+        }
+        <button class="btn sm" type="button" (click)="addBank()"><app-icon name="plus" [size]="13" /> Add answer</button>
+      </div>
+    </section>
+  }
+</div>

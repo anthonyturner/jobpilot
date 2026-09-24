@@ -1,0 +1,141 @@
+@if (job(); as j) {
+  <header class="hero" [style.--tone]="toneColor()">
+    <button class="btn ghost icon sm close" type="button" (click)="closed.emit()" aria-label="Close details">
+      <app-icon name="x" [size]="16" />
+    </button>
+    <div class="hero-main">
+      <app-company-avatar [name]="j.company" [logo]="j.companyLogo" [size]="60" />
+      <div class="hero-text">
+        <h2>{{ j.title }}</h2>
+        <p class="company"><app-icon name="building" [size]="14" /> {{ j.company }}</p>
+      </div>
+    </div>
+    <div class="facts">
+      <span class="fact"><app-icon name="pin" [size]="14" /> {{ j.location }}</span>
+      <span class="fact"><app-icon name="globe" [size]="14" /> {{ remote() }}</span>
+      @if (salary(); as s) {
+        <span class="fact strong"><app-icon name="dollar" [size]="14" /> {{ s }}</span>
+      }
+      @if (j.employmentType) {
+        <span class="fact"><app-icon name="briefcase" [size]="14" /> {{ j.employmentType }}</span>
+      }
+      <span class="fact"><app-icon name="clock" [size]="14" /> Posted {{ posted() }}</span>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" type="button" (click)="prepareApplication()" [disabled]="starting()">
+        <app-icon name="sparkles" [size]="14" [class.spin]="starting()" /> {{ j.status === 'applying' || j.status === 'applied' ? 'Open application' : 'Prepare application' }}
+      </button>
+      <a class="btn" [href]="j.applyUrl" target="_blank" rel="noopener noreferrer">
+        {{ sourceLabels[j.primarySource] }} <app-icon name="external" [size]="14" />
+      </a>
+      <button class="btn" type="button" (click)="toggleStar()" [class.starred]="j.starred" [attr.aria-pressed]="j.starred">
+        <app-icon name="star" [size]="15" [filled]="j.starred" /> {{ j.starred ? 'Starred' : 'Star' }}
+      </button>
+      <label class="status-select">
+        <span class="sr-only">Pipeline status</span>
+        <select class="select" [ngModel]="j.status === 'new' ? '' : j.status" (ngModelChange)="setStatus($event)">
+          <option value="" disabled>Move to pipeline…</option>
+          @for (s of statuses; track s) {
+            <option [value]="s">{{ statusMeta[s].label }}</option>
+          }
+        </select>
+      </label>
+      @if (j.status !== 'hidden') {
+        <button class="btn icon danger" type="button" (click)="setStatus('hidden')" title="Hide this job" aria-label="Hide this job">
+          <app-icon name="eyeOff" [size]="16" />
+        </button>
+      }
+    </div>
+    @if (startError(); as e) {
+      <p class="start-error"><app-icon name="alert" [size]="14" /> {{ e }}</p>
+    }
+  </header>
+
+  <section class="card match">
+    <div class="match-head">
+      <app-score-ring [score]="j.score" [size]="92" [showCaption]="true" />
+      <div>
+        <p class="eyebrow">Why it ranks here</p>
+        <h3>{{ verdict() }}</h3>
+        <p class="muted small">Scored against your profile. Change skills or preferences in Settings and every job is rescored.</p>
+      </div>
+    </div>
+    <div class="bars">
+      @for (bar of bars(); track bar.label) {
+        <div class="bar-row">
+          <div class="bar-label"><span>{{ bar.label }}</span><span class="muted">{{ bar.note }}</span></div>
+          <div class="bar"><span [style.width.%]="(bar.points / bar.max) * 100"></span></div>
+          <span class="bar-num">{{ bar.points }}<small>/{{ bar.max }}</small></span>
+        </div>
+      }
+    </div>
+    @if (j.scoreBreakdown.penalties.reasons.length) {
+      <div class="penalties">
+        @for (reason of j.scoreBreakdown.penalties.reasons; track reason) {
+          <span class="chip bad"><app-icon name="alert" [size]="11" /> {{ reason }}</span>
+        }
+      </div>
+    }
+    <div class="skills">
+      @for (s of j.scoreBreakdown.skills.matched; track s) {
+        <span class="chip good"><app-icon name="check" [size]="11" /> {{ s }}</span>
+      }
+      @for (s of j.scoreBreakdown.skills.missing; track s) {
+        <span class="chip dim">{{ s }}</span>
+      }
+    </div>
+  </section>
+
+  <section class="card">
+    <h4 class="section-title">About the role</h4>
+    @if (j.descriptionText.length > 40) {
+      <!-- Sanitised on the server (allowlist) and again by Angular's [innerHTML] sanitizer. -->
+      <div class="description" [innerHTML]="j.descriptionHtml"></div>
+    } @else {
+      <div class="empty-desc">
+        <app-icon name="inbox" [size]="22" />
+        <p>{{ sourceLabels[j.primarySource] }} only shares a summary for this listing. Open it to read the full description.</p>
+      </div>
+    }
+  </section>
+
+  <section class="card">
+    <h4 class="section-title">Your notes</h4>
+    <textarea class="input" rows="4" placeholder="Recruiter name, referral, salary thoughts…" [ngModel]="notes()" (ngModelChange)="onNotes($event)" maxlength="5000"></textarea>
+    <p class="saved" [class.show]="notesSaved()"><app-icon name="check" [size]="12" /> Saved</p>
+  </section>
+
+  <section class="card two-col">
+    <div>
+      <h4 class="section-title">Found on</h4>
+      <ul class="sources">
+        @for (src of j.sources; track src.source) {
+          <li>
+            <span class="dot" [style.background]="sourceColors[src.source]"></span>
+            <a [href]="src.url" target="_blank" rel="noopener noreferrer">{{ sourceLabels[src.source] }} <app-icon name="external" [size]="12" /></a>
+          </li>
+        }
+      </ul>
+      <p class="muted small">First seen {{ firstSeen() }}</p>
+    </div>
+    <div>
+      <h4 class="section-title">Activity</h4>
+      @if (j.history.length) {
+        <ol class="timeline">
+          @for (h of j.history; track h.id) {
+            <li><span>{{ historyLabel(h.action, h.detail) }}</span><time class="muted">{{ ago(h.at) }}</time></li>
+          }
+        </ol>
+      } @else {
+        <p class="muted small">No activity yet.</p>
+      }
+    </div>
+  </section>
+} @else if (loading()) {
+  <div class="loading">
+    <div class="skeleton" style="height: 170px"></div>
+    <div class="skeleton" style="height: 240px"></div>
+    <div class="skeleton" style="height: 320px"></div>
+  </div>
+}

@@ -1,0 +1,57 @@
+<div class="shell">
+  <aside class="sidebar glass">
+    <a class="brand" routerLink="/jobs" aria-label="JobPilot home">
+      <span class="logo">
+        <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
+          <path d="M9 17.5 14.5 12l3 3L23 9.5M23 9.5h-4.5M23 9.5V14" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M9 23h14" stroke="#fff" stroke-opacity=".6" stroke-width="2.6" stroke-linecap="round" />
+        </svg>
+      </span>
+      <span class="brand-text">
+        <strong>JobPilot</strong>
+        <small>Your job-search copilot</small>
+      </span>
+    </a>
+
+    <nav class="nav" aria-label="Main">
+      @for (item of nav; track item.path) {
+        <a class="nav-item" [routerLink]="item.path" routerLinkActive="active" #rla="routerLinkActive" [attr.aria-current]="rla.isActive ? 'page' : null">
+          <app-icon [name]="item.icon" [size]="18" />
+          <span class="nav-label">{{ item.label }}</span>
+          @if (item.badge?.(); as count) {
+            <span class="badge">{{ count }}</span>
+          }
+        </a>
+      }
+    </nav>
+
+    <div class="sweep-card">
+      <div class="sweep-head">
+        <span class="pulse" [class.live]="tracker.running()"></span>
+        <span>{{ tracker.running() ? 'Sweeping job boards' : 'Auto-sweep on' }}</span>
+      </div>
+      @if (tracker.progress(); as p) {
+        <div class="progress"><span [style.width.%]="p.total ? (p.done / p.total) * 100 : 8"></span></div>
+        <p class="sweep-meta">{{ p.done }}/{{ p.total }} sources · {{ p.found }} new</p>
+      } @else {
+        <p class="sweep-meta">
+          @if (nextSweep(); as n) { Next {{ n }} } @else { No schedule enabled }
+          @if (lastSweep(); as l) { <br />Last {{ l }} }
+        </p>
+      }
+      <button class="btn primary sm run-btn" type="button" (click)="tracker.start()" [disabled]="tracker.running()">
+        <app-icon name="refresh" [size]="14" [class.spin]="tracker.running()" />
+        {{ tracker.running() ? 'Running…' : 'Sweep now' }}
+      </button>
+    </div>
+
+    <button class="btn ghost theme-toggle" type="button" (click)="theme.toggle()" [attr.aria-label]="'Switch to ' + (theme.theme() === 'dark' ? 'light' : 'dark') + ' mode'">
+      <app-icon [name]="theme.theme() === 'dark' ? 'sun' : 'moon'" [size]="16" />
+      <span class="nav-label">{{ theme.theme() === 'dark' ? 'Light mode' : 'Dark mode' }}</span>
+    </button>
+  </aside>
+
+  <main class="content">
+    <router-outlet />
+  </main>
+</div>

@@ -1,0 +1,315 @@
+@if (app(); as a) {
+  <header class="head glass rise">
+    <a class="back btn ghost sm" routerLink="/applications"><app-icon name="chevronLeft" [size]="14" /> Applications</a>
+    <div class="head-main">
+      <app-company-avatar [name]="a.job?.company ?? '?'" [logo]="a.job?.companyLogo ?? null" [size]="56" />
+      <div class="head-text">
+        <h1>{{ a.job?.title }}</h1>
+        <p>
+          {{ a.job?.company }}
+          @if (a.job?.location) { · {{ a.job?.location }} }
+          @if (salary(); as s) { · {{ s }} }
+        </p>
+      </div>
+      <span class="chip {{ meta[a.status].tone }} status">{{ meta[a.status].label }}</span>
+    </div>
+    <ol class="stepper" aria-label="Progress">
+      @for (step of steps; track step; let i = $index) {
+        <li [class.done]="meta[a.status].step > i || a.status === 'submitted'" [class.current]="meta[a.status].step === i && a.status !== 'submitted'">
+          <span class="dot">
+            @if (meta[a.status].step > i || a.status === 'submitted') { <app-icon name="check" [size]="12" [stroke]="3" /> } @else { {{ i + 1 }} }
+          </span>
+          <span class="step-label">{{ step }}</span>
+        </li>
+      }
+    </ol>
+  </header>
+
+  @if (error(); as e) {
+    <div class="banner bad rise"><app-icon name="alert" [size]="16" /> {{ e }}</div>
+  }
+  @if (a.note && a.status !== 'preparing') {
+    <div class="banner {{ a.status === 'submitted' ? 'good' : a.status === 'previewed' ? 'info' : 'warn' }} rise"><app-icon [name]="a.status === 'submitted' ? 'check' : 'alert'" [size]="16" /> {{ a.note }}</div>
+  }
+
+  <div class="layout">
+    <main class="main">
+      @if (a.status === 'preparing') {
+        <section class="card glass preparing">
+          <div class="orb"><app-icon name="sparkles" [size]="28" /></div>
+          <h2>Tailoring your application</h2>
+          <p class="muted">Claude is picking the most relevant parts of your resume and drafting a cover letter. It runs with no tools, so it can only rearrange facts from your resume. This usually takes about a minute.</p>
+          <div class="skeleton" style="height: 10px; width: 60%"></div>
+        </section>
+      } @else if (a.packet) {
+        <nav class="tabs" role="tablist">
+          <button role="tab" type="button" [class.active]="tab() === 'resume'" (click)="tab.set('resume')"><app-icon name="briefcase" [size]="14" /> Resume</button>
+          <button role="tab" type="button" [class.active]="tab() === 'letter'" (click)="tab.set('letter')"><app-icon name="send" [size]="14" /> Cover letter</button>
+          <button role="tab" type="button" [class.active]="tab() === 'form'" (click)="tab.set('form')">
+            <app-icon name="layers" [size]="14" /> Application form
+            @if (openQuestions().length) { <span class="count">{{ openQuestions().length }}</span> }
+          </button>
+          @if (dirty()) {
+            <span class="dirty-actions">
+              <button class="btn ghost sm" type="button" (click)="discardEdits()">Discard</button>
+              <button class="btn primary sm" type="button" (click)="saveEdits()" [disabled]="busy() === 'save'">{{ busy() === 'save' ? 'Saving…' : 'Save changes' }}</button>
+            </span>
+          }
+        </nav>
+
+        @switch (tab()) {
+          @case ('resume') {
+            <section class="card glass">
+              <div class="card-head">
+                <h2>Summary</h2>
+                @if (fileUrl(a.files.resume); as url) {
+                  <a class="btn sm" [href]="url" target="_blank" rel="noopener"><app-icon name="external" [size]="13" /> Open PDF</a>
+                }
+              </div>
+              <textarea class="input" rows="4" [ngModel]="summary()" (ngModelChange)="summary.set($event); dirty.set(true)" [disabled]="!editable()" maxlength="1200"></textarea>
+              <p class="hint">The only resume text Claude writes. Everything below is your own wording, selected and ordered for this job.</p>
+            </section>
+
+            <section class="card glass">
+              <h2>Experience</h2>
+              <p class="hint">Tick the bullets to include and use the arrows to reorder them. Each role keeps at least one bullet.</p>
+              @for (role of roles(); track role.id) {
+                <div class="role">
+                  <div class="role-head"><strong>{{ role.title }}</strong><span class="muted">&nbsp;· {{ role.company }} · {{ role.dates }}</span></div>
+                  <ul class="bullets">
+                    @for (b of role.bullets; track b.id; let i = $index) {
+                      <li [class.off]="!b.included">
+                        <button type="button" class="tick" [class.on]="b.included" (click)="toggleBullet(role.id, b.id)" [disabled]="!editable()" [attr.aria-pressed]="b.included" aria-label="Include bullet">
+                          @if (b.included) { <app-icon name="check" [size]="12" [stroke]="3" /> }
+                        </button>
+                        <span class="text">{{ b.text }}</span>
+                        <span class="move">
+                          <button type="button" (click)="moveBullet(role.id, i, -1)" [disabled]="!editable() || i === 0" aria-label="Move up">↑</button>
+                          <button type="button" (click)="moveBullet(role.id, i, 1)" [disabled]="!editable() || i === role.bullets.length - 1" aria-label="Move down">↓</button>
+                        </span>
+                      </li>
+                    }
+                  </ul>
+                </div>
+              }
+            </section>
+
+            <section class="card glass">
+              <h2>Featured projects</h2>
+              <div class="project-list">
+                @for (p of projects(); track p.id) {
+                  <button type="button" class="project" [class.on]="p.included" (click)="toggleProject(p.id)" [disabled]="!editable()">
+                    <span class="tick" [class.on]="p.included">@if (p.included) { <app-icon name="check" [size]="12" [stroke]="3" /> }</span>
+                    {{ p.name }}
+                  </button>
+                }
+              </div>
+            </section>
+          }
+
+          @case ('letter') {
+            <section class="card glass">
+              <div class="card-head">
+                <h2>Cover letter</h2>
+                @if (fileUrl(a.files.coverLetter); as url) {
+                  <a class="btn sm" [href]="url" target="_blank" rel="noopener"><app-icon name="external" [size]="13" /> Open PDF</a>
+                }
+              </div>
+              <p class="letter-fixed">Dear Hiring Team at {{ a.job?.company }},</p>
+              @for (p of paragraphs(); track $index; let i = $index) {
+                <div class="para">
+                  <textarea class="input" rows="5" [ngModel]="p" (ngModelChange)="setParagraph(i, $event)" [disabled]="!editable()" maxlength="2000"></textarea>
+                  @if (editable() && paragraphs().length > 1) {
+                    <button type="button" class="btn ghost icon sm danger" (click)="removeParagraph(i)" aria-label="Remove paragraph"><app-icon name="trash" [size]="14" /></button>
+                  }
+                </div>
+              }
+              @if (editable() && paragraphs().length < 6) {
+                <button type="button" class="btn sm" (click)="addParagraph()"><app-icon name="plus" [size]="13" /> Add paragraph</button>
+              }
+              <p class="letter-fixed">Sincerely,<br />{{ resume()?.name }}</p>
+            </section>
+          }
+
+          @case ('form') {
+            @if (a.report; as r) {
+              <section class="card glass">
+                <div class="card-head">
+                  <h2>{{ r.ats ? (r.ats === 'greenhouse' ? 'Greenhouse' : 'Lever') + ' form' : 'Application page' }}</h2>
+                  <span class="muted small">Checked {{ ago(r.at) }}</span>
+                </div>
+                @for (b of r.blockers; track b) {
+                  <p class="blocker"><app-icon name="alert" [size]="14" /> {{ b }}</p>
+                }
+                @if (r.screenshot) {
+                  <a class="shot" [href]="fileUrl(r.screenshot)" target="_blank" rel="noopener">
+                    <img [src]="fileUrl(r.screenshot)" alt="Screenshot of the filled form" loading="lazy" />
+                    <span class="shot-cap"><app-icon name="external" [size]="12" /> Full-size screenshot</span>
+                  </a>
+                }
+              </section>
+
+              @if (openQuestions().length) {
+                <section class="card glass questions">
+                  <h2>Questions for you</h2>
+                  <p class="hint">JobPilot doesn't guess. Answer these truthfully and it fills them in on the next pass.</p>
+                  @for (q of openQuestions(); track q.key) {
+                    <label class="question">
+                      <span class="q-label">{{ q.label }} @if (q.required) { <em>required</em> }</span>
+                      @if (q.kind === 'file') {
+                        <span class="muted small">Upload this one yourself in the browser window.</span>
+                      } @else if (q.options.length) {
+                        <select class="select" [ngModel]="answers()[q.label]" (ngModelChange)="setAnswer(q.label, $event)">
+                          <option value="">Choose…</option>
+                          @for (o of q.options; track o) { <option [value]="o">{{ o }}</option> }
+                        </select>
+                      } @else if (q.kind === 'checkbox') {
+                        <select class="select" [ngModel]="answers()[q.label]" (ngModelChange)="setAnswer(q.label, $event)">
+                          <option value="">Choose…</option><option value="yes">Tick it</option><option value="no">Leave unticked</option>
+                        </select>
+                      } @else if (q.kind === 'textarea') {
+                        <textarea class="input" rows="3" [ngModel]="answers()[q.label]" (ngModelChange)="setAnswer(q.label, $event)" maxlength="2000"></textarea>
+                      } @else {
+                        <input class="input" [ngModel]="answers()[q.label]" (ngModelChange)="setAnswer(q.label, $event)" maxlength="300" />
+                      }
+                    </label>
+                  }
+                  <div class="q-actions">
+                    <label class="inline"><button type="button" class="switch" [class.on]="saveToBank()" (click)="saveToBank.set(!saveToBank())" aria-label="Remember answers"></button> Remember these answers for future applications</label>
+                    <button class="btn primary" type="button" (click)="saveAnswers()" [disabled]="!answersComplete() || !!busy()">
+                      <app-icon name="refresh" [size]="14" [class.spin]="busy() === 'answers' || busy() === 'preview'" /> Save and fill again
+                    </button>
+                  </div>
+                </section>
+              }
+
+              @if (r.filled.length) {
+                <section class="card glass">
+                  <h2>Filled in ({{ r.filled.length }})</h2>
+                  <table class="filled">
+                    <tbody>
+                      @for (f of r.filled; track $index) {
+                        <tr><th>{{ f.label }}</th><td>{{ f.value }}</td><td class="muted">{{ f.source }}</td></tr>
+                      }
+                    </tbody>
+                  </table>
+                </section>
+              }
+            } @else {
+              <section class="card glass empty-form">
+                <app-icon name="layers" [size]="24" />
+                <p>Approve the packet, then run <b>Preview form</b>. JobPilot fills the employer's form in a hidden browser, shows you a screenshot, and never presses submit.</p>
+              </section>
+            }
+          }
+        }
+      } @else {
+        <section class="card glass"><p class="muted">{{ a.note || 'No packet yet.' }}</p></section>
+      }
+    </main>
+
+    <aside class="side">
+      <section class="card glass next">
+        <p class="eyebrow">Next step</p>
+        @switch (a.status) {
+          @case ('preparing') {
+            <h3>Drafting…</h3>
+            <p class="muted small">This page updates by itself.</p>
+          }
+          @case ('review') {
+            <h3>Review and approve</h3>
+            <p class="muted small">Read the resume and cover letter. Edit anything. Approving means you're happy for exactly this to be sent.</p>
+            @if (a.packet?.ungrounded?.length) {
+              <div class="flags">
+                <p><app-icon name="alert" [size]="14" /> These terms aren't in your base resume. Make sure each one is true or remove it:</p>
+                <div class="flag-list">@for (f of a.packet!.ungrounded; track f) { <span class="chip warn">{{ f }}</span> }</div>
+                <label class="inline"><button type="button" class="switch" [class.on]="flagsChecked()" (click)="flagsChecked.set(!flagsChecked())" aria-label="I checked these"></button> I checked these and they're accurate</label>
+              </div>
+            }
+            <button class="btn primary wide" type="button" (click)="approve()" [disabled]="dirty() || !!busy() || (!!a.packet?.ungrounded?.length && !flagsChecked())">
+              <app-icon name="check" [size]="14" /> {{ dirty() ? 'Save your edits first' : 'Approve packet' }}
+            </button>
+            <button class="btn ghost wide" type="button" (click)="regenerate()" [disabled]="!!busy()"><app-icon name="refresh" [size]="14" /> Redraft with Claude</button>
+          }
+          @case ('submitted') {
+            <h3 class="good-text"><app-icon name="check" [size]="18" /> Submitted</h3>
+            <p class="muted small">{{ a.mode === 'automated' ? 'Sent by JobPilot' : 'Sent by you' }} {{ ago(a.submittedAt) }}. The job is now in your Pipeline as Applied.</p>
+            <a class="btn wide" routerLink="/pipeline"><app-icon name="kanban" [size]="14" /> Open pipeline</a>
+          }
+          @case ('failed') {
+            <h3>Something went wrong</h3>
+            <p class="muted small">{{ a.note }}</p>
+            <button class="btn primary wide" type="button" (click)="regenerate()" [disabled]="!!busy()"><app-icon name="refresh" [size]="14" /> Try again</button>
+          }
+          @default {
+            <h3>{{ a.status === 'approved' ? 'Fill the application form' : a.status === 'previewed' ? 'Ready to send' : 'Needs your attention' }}</h3>
+            <p class="muted small">
+              @if (a.status === 'approved') { Preview fills the form in a hidden browser and screenshots it. Nothing is sent. }
+              @else if (a.status === 'previewed') { Everything required is filled. Open it in the browser to check and press Submit yourself. }
+              @else { Answer the open questions or deal with the blocker, then fill it again. }
+            </p>
+            <button class="btn wide" [class.primary]="a.status !== 'previewed'" type="button" (click)="preview()" [disabled]="!!busy()">
+              <app-icon name="layers" [size]="14" [class.spin]="busy() === 'preview'" /> {{ busy() === 'preview' ? 'Filling form…' : a.report ? 'Preview again' : 'Preview form (dry run)' }}
+            </button>
+            <button class="btn wide" [class.primary]="a.status === 'previewed'" type="button" (click)="openInBrowser()" [disabled]="!!busy()">
+              <app-icon name="external" [size]="14" /> {{ busy() === 'open' ? 'Opening…' : 'Open filled form, I’ll submit' }}
+            </button>
+            <button class="btn ghost wide" type="button" (click)="markSubmitted()" [disabled]="!!busy()"><app-icon name="check" [size]="14" /> I submitted it</button>
+
+            @if (submitAllowed()) {
+              @if (!showSubmit()) {
+                <button class="btn wide danger-outline" type="button" (click)="showSubmit.set(true)"><app-icon name="send" [size]="14" /> Let JobPilot submit…</button>
+              } @else {
+                <div class="confirm">
+                  <p><b>This sends your application to {{ a.job?.company }}.</b> JobPilot presses submit once and never retries. Type the company name to confirm.</p>
+                  <input class="input" [ngModel]="confirmCompany()" (ngModelChange)="confirmCompany.set($event)" [placeholder]="a.job?.company ?? ''" aria-label="Company name" />
+                  <div class="row2">
+                    <button class="btn ghost sm" type="button" (click)="showSubmit.set(false)">Cancel</button>
+                    <button class="btn primary sm" type="button" (click)="submit()" [disabled]="confirmCompany().trim().toLowerCase() !== (a.job?.company ?? '').toLowerCase() || !!busy()">
+                      {{ busy() === 'submit' ? 'Submitting…' : 'Submit application' }}
+                    </button>
+                  </div>
+                </div>
+              }
+            } @else if (a.status === 'previewed' && a.ats) {
+              <p class="muted small tiny">Automatic submission is off for this site. You can allow it in Settings → Automation.</p>
+            }
+          }
+        }
+      </section>
+
+      @if (a.packet; as p) {
+        @if (p.fitNotes.length) {
+          <section class="card glass">
+            <h4 class="section-title">Why you fit</h4>
+            <ul class="notes good">@for (n of p.fitNotes; track n) { <li>{{ n }}</li> }</ul>
+          </section>
+        }
+        @if (p.concerns.length) {
+          <section class="card glass">
+            <h4 class="section-title">Gaps to be ready for</h4>
+            <ul class="notes warn">@for (n of p.concerns; track n) { <li>{{ n }}</li> }</ul>
+          </section>
+        }
+      }
+
+      <section class="card glass">
+        <h4 class="section-title">Documents</h4>
+        <ul class="docs">
+          @if (fileUrl(a.files.resume); as url) { <li><a [href]="url" target="_blank" rel="noopener"><app-icon name="briefcase" [size]="14" /> {{ a.files.resume }}</a></li> }
+          @if (fileUrl(a.files.coverLetter); as url) { <li><a [href]="url" target="_blank" rel="noopener"><app-icon name="send" [size]="14" /> {{ a.files.coverLetter }}</a></li> }
+          <li><a [href]="a.applyUrl" target="_blank" rel="noopener noreferrer"><app-icon name="external" [size]="14" /> Original posting</a></li>
+        </ul>
+      </section>
+
+      @if (a.status !== 'submitted') {
+        <button class="btn ghost danger wide" type="button" (click)="cancel()" [disabled]="!!busy()"><app-icon name="trash" [size]="14" /> Cancel this application</button>
+      }
+    </aside>
+  </div>
+} @else if (error()) {
+  <div class="banner bad">{{ error() }} <a routerLink="/applications">Back to applications</a></div>
+} @else {
+  <div class="skeleton" style="height: 180px; margin-bottom: 16px"></div>
+  <div class="skeleton" style="height: 420px"></div>
+}

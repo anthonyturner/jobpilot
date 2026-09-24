@@ -1,0 +1,25 @@
+{
+  "name": "jobpilot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal job-search copilot: aggregates matching jobs from Indeed and other boards on a schedule and ranks them against your resume.",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c magenta,cyan \"npm:dev -w server\" \"npm:start -w web\"",
+    "build": "npm run build -w web",
+    "start": "npm run build && npm run start -w server",
+    "serve": "npm run start -w server",
+    "test": "npm test -w server",
+    "typecheck": "npm run typecheck -w server",
+    "sync": "npm run sync -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

@@ -1,0 +1,130 @@
+<div class="wizard">
+  <header class="top">
+    <span class="logo">
+      <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
+        <path d="M9 17.5 14.5 12l3 3L23 9.5M23 9.5h-4.5M23 9.5V14" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M9 23h14" stroke="#fff" stroke-opacity=".6" stroke-width="2.6" stroke-linecap="round" />
+      </svg>
+    </span>
+    <strong>JobPilot setup</strong>
+    <ol class="progress" aria-label="Setup progress">
+      @for (s of steps; track s.title; let i = $index) {
+        <li [class.done]="i < step()" [class.current]="i === step()"><span>{{ i + 1 }}</span><em>{{ s.title }}</em></li>
+      }
+    </ol>
+  </header>
+
+  <main class="panel glass rise" [attr.aria-label]="steps[step()]!.title">
+    @switch (step()) {
+      @case (0) {
+        <div class="hero">
+          <div class="orb"><app-icon name="sparkles" [size]="30" /></div>
+          <h1>Welcome to JobPilot</h1>
+          <p class="lead">Your own job-search copilot. It finds jobs that match your resume on a schedule, ranks them, and helps you apply, only ever with your approval.</p>
+          <ul class="promises">
+            <li><app-icon name="shield" [size]="18" /><span><b>Private by design.</b> Everything runs and is stored on this computer. There is no account and no cloud database.</span></li>
+            <li><app-icon name="globe" [size]="18" /><span><b>Official sources only.</b> Job boards are reached through their public APIs, never scraped.</span></li>
+            <li><app-icon name="check" [size]="18" /><span><b>You stay in control.</b> Nothing is ever submitted to an employer without your explicit approval.</span></li>
+          </ul>
+          <p class="muted small">Setup takes about three minutes. You can change everything later in Settings.</p>
+        </div>
+      }
+
+      @case (1) {
+        <h2>Start with your resume</h2>
+        <p class="sub">JobPilot reads your skills and job titles from it to suggest what to search for, and uses it later to tailor applications. It stays on this computer.</p>
+        <label class="drop" [class.over]="dragOver()" (dragover)="$event.preventDefault(); dragOver.set(true)" (dragleave)="dragOver.set(false)" (drop)="onDrop($event)">
+          <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" (change)="onFile($event)" hidden />
+          @if (uploading()) {
+            <app-icon name="refresh" [size]="28" class="spin" />
+            <b>Reading your resume…</b>
+          } @else if (resume(); as r) {
+            <app-icon name="check" [size]="28" class="ok" />
+            <b>{{ r.name }}</b>
+            <span class="muted">{{ r.experience.length }} roles · {{ r.skills.length }} skill groups · {{ r.projects.length }} projects</span>
+            <span class="link">Choose a different file</span>
+          } @else {
+            <app-icon name="briefcase" [size]="28" />
+            <b>Drop your resume here, or click to choose</b>
+            <span class="muted">Word .docx, up to 5 MB</span>
+          }
+        </label>
+        <p class="hint">Works best with a conventional layout: your name at the top, then sections like SUMMARY, SKILLS, EXPERIENCE and EDUCATION.</p>
+      }
+
+      @case (2) {
+        @if (profile(); as p) {
+          <h2>About you</h2>
+          <p class="sub">Used to rank jobs by location and pay. {{ resume() ? 'Pre-filled from your resume.' : '' }}</p>
+          <div class="fields two">
+            <label><span class="label">Your name</span><input class="input" [ngModel]="p.fullName" (ngModelChange)="edit('fullName', $event)" maxlength="120" /></label>
+            <label><span class="label">Where you live</span><input class="input" [ngModel]="p.primaryLocation" (ngModelChange)="edit('primaryLocation', $event)" placeholder="City, ST" maxlength="120" /></label>
+            <label class="span"><span class="label">Headline (optional)</span><input class="input" [ngModel]="p.headline" (ngModelChange)="edit('headline', $event)" placeholder="e.g. Senior Backend Engineer | Go + Kubernetes" maxlength="200" /></label>
+          </div>
+          <div class="field">
+            <span class="label">Work arrangement</span>
+            <div class="segmented">
+              <button type="button" [class.active]="p.remotePreference === 'remote-only'" (click)="edit('remotePreference', 'remote-only')">Remote only</button>
+              <button type="button" [class.active]="p.remotePreference === 'remote-or-hybrid'" (click)="edit('remotePreference', 'remote-or-hybrid')">Remote or hybrid</button>
+              <button type="button" [class.active]="p.remotePreference === 'any'" (click)="edit('remotePreference', 'any')">Anything nearby</button>
+            </div>
+          </div>
+          <div class="fields two">
+            <div class="field"><span class="label">Places you'd work</span>
+              <app-chip-input [values]="p.preferredLocations" (valuesChange)="edit('preferredLocations', $event)" placeholder="City, ST, then Enter" /></div>
+            <label><span class="label">Minimum salary (USD per year, optional)</span>
+              <input class="input" type="number" min="0" step="5000" [ngModel]="p.minSalary" (ngModelChange)="setMinSalary($event)" placeholder="No minimum" /></label>
+          </div>
+        }
+      }
+
+      @case (3) {
+        @if (profile(); as p) {
+          <h2>What to look for</h2>
+          <p class="sub">Searches are sent to job boards. Titles and skills decide how each job is scored. {{ resume() ? 'These are suggestions from your resume: trim or add to them.' : '' }}</p>
+          <div class="field"><span class="label">Search queries</span>
+            <app-chip-input [values]="p.searchQueries" (valuesChange)="edit('searchQueries', $event)" [max]="12" placeholder="e.g. Backend engineer, then Enter" /></div>
+          <div class="field"><span class="label">Job titles you want</span>
+            <app-chip-input [values]="p.targetTitles" (valuesChange)="edit('targetTitles', $event)" [max]="30" placeholder="e.g. software engineer" /></div>
+          <div class="field"><span class="label">Your skills</span>
+            <app-chip-input [values]="skillNames()" (valuesChange)="setSkills($event)" [max]="80" [maxLength]="60" placeholder="e.g. Python" />
+            <p class="hint">You can mark skills as core or signature later in Settings to weight them more.</p></div>
+          <div class="field"><span class="label">Skip jobs mentioning</span>
+            <app-chip-input [values]="p.excludeKeywords" (valuesChange)="edit('excludeKeywords', $event)" placeholder="e.g. internship" /></div>
+        }
+      }
+
+      @case (4) {
+        <h2>Job sources</h2>
+        <p class="sub">Remotive, Remote OK and The Muse work straight away. Free API keys add more boards. Keys are stored only on this computer and are never shown again after saving.</p>
+        <app-credentials-form [showSave]="false" [claudeAvailable]="status()?.claudeAvailable ?? null" />
+        @if (status() && !status()!.chromeAvailable) {
+          <p class="note"><app-icon name="alert" [size]="14" /> Chrome or Edge wasn't found. Job search works, but creating PDFs and filling applications needs one of them (or set CHROME_PATH).</p>
+        }
+      }
+    }
+
+    @if (error(); as e) {
+      <p class="error"><app-icon name="alert" [size]="14" /> {{ e }}</p>
+    }
+
+    <footer class="nav">
+      @if (step() > 0) {
+        <button class="btn ghost" type="button" (click)="back()" [disabled]="busy()"><app-icon name="chevronLeft" [size]="14" /> Back</button>
+      }
+      <span class="spacer"></span>
+      @if (step() === 1 && !resume()) {
+        <button class="btn ghost" type="button" (click)="next()">Skip for now</button>
+      }
+      @if (step() < steps.length - 1) {
+        <button class="btn primary" type="button" (click)="next()" [disabled]="!canContinue() || uploading()">
+          {{ step() === 0 ? 'Get started' : 'Continue' }} <app-icon name="chevronRight" [size]="14" />
+        </button>
+      } @else {
+        <button class="btn primary" type="button" (click)="finish()" [disabled]="busy()">
+          <app-icon [name]="busy() ? 'refresh' : 'zap'" [size]="14" [class.spin]="busy()" /> {{ busy() ? 'Finishing…' : 'Finish and find jobs' }}
+        </button>
+      }
+    </footer>
+  </main>
+</div>
