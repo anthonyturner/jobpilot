@@ -124,7 +124,7 @@ export class ApiService {
     return this.http.patch<Application>(`/api/applications/${encodeURIComponent(id)}/packet`, edit);
   }
 
-  applicationAction(id: string, action: 'regenerate' | 'approve' | 'preview' | 'open' | 'mark-submitted' | 'cancel', body: object = {}): Observable<Application> {
+  applicationAction(id: string, action: 'regenerate' | 'approve' | 'approve-and-preview' | 'preview' | 'open' | 'mark-submitted' | 'cancel', body: object = {}): Observable<Application> {
     return this.http.post<Application>(`/api/applications/${encodeURIComponent(id)}/${action}`, body);
   }
 

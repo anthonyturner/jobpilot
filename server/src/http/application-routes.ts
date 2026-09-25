@@ -57,6 +57,9 @@ export function registerApplicationRoutes(app: FastifyInstance, deps: { service:
     return service.setAnswers(parseOrThrow(IdParams, req.params).id, body.answers, body.saveToBank);
   });
   app.post('/api/applications/:id/preview', async (req) => service.preview(parseOrThrow(IdParams, req.params).id));
+  app.post('/api/applications/:id/approve-and-preview', async (req) =>
+    service.approveAndPreview(parseOrThrow(IdParams, req.params).id, parseOrThrow(ApproveBody, req.body ?? {}).acknowledgeFlags),
+  );
   app.post('/api/applications/:id/open', async (req) => service.openInBrowser(parseOrThrow(IdParams, req.params).id));
   app.post('/api/applications/:id/submit', async (req) => service.submit(parseOrThrow(IdParams, req.params).id, parseOrThrow(SubmitBody, req.body).confirmCompany));
   app.post('/api/applications/:id/mark-submitted', async (req) => service.markSubmitted(parseOrThrow(IdParams, req.params).id));
