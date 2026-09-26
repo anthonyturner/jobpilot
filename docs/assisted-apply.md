@@ -38,4 +38,6 @@ Read this file before touching anything under `server/src/services/apply/`,
     opens or submits, and never opens a job-board or employer page. It is off until the owner turns it
     on. It only runs once first-run setup is finished, and it re-checks the kill switch before each job.
     It never selects a job that has had any application before, and it leaves the job's status alone
-    until the owner approves. Everything it does is in the audit log under the `scheduler` actor.
+    until the owner approves. It skips a company that already has an application in `preparing` or
+    `review`. Before counting the review queue it moves any application stuck in `preparing` for over
+    30 minutes (left by a killed process) to `failed`, and touches no other status. Everything it does is in the audit log under the `scheduler` actor.
