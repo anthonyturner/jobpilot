@@ -284,6 +284,35 @@ export interface AutoPrepare {
   minScore: number;
 }
 
+/** Mirrors server/src/domain/auto-prepare.ts. */
+export type AutoPrepareTrigger = 'unattended' | 'manual';
+export type AutoPrepareOutcome = 'finished' | 'queue-full' | 'disabled' | 'blocked' | 'stopped';
+
+export interface PreparedJob {
+  applicationId: string;
+  jobId: string;
+  title: string;
+  company: string;
+}
+
+export interface AutoPrepareResult {
+  outcome: AutoPrepareOutcome;
+  reason: string | null;
+  started: PreparedJob[];
+  prepared: PreparedJob[];
+  failed: Array<PreparedJob & { error: string }>;
+  skipped: Array<{ jobId: string; title: string; company: string; reason: string }>;
+}
+
+/** "Prepare top matches": the run in flight on the server, or the last one it finished. */
+export interface AutoPrepareStatus {
+  running: boolean;
+  trigger: AutoPrepareTrigger | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  result: AutoPrepareResult | null;
+}
+
 // ---- First-run setup and credentials ------------------------------------------
 
 export interface SetupStatus {

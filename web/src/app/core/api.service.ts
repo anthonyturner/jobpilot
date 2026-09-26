@@ -9,6 +9,7 @@ import type {
   SetupStatus,
   Application,
   Automation,
+  AutoPrepareStatus,
   JobDetail,
   JobPage,
   JobQuery,
@@ -114,6 +115,15 @@ export class ApiService {
 
   application(id: string): Observable<Application> {
     return this.http.get<Application>(`/api/applications/${encodeURIComponent(id)}`);
+  }
+
+  /** Starts "Prepare top matches" on the server; it answers before any tailoring is done. */
+  startAutoPrepare(): Observable<{ alreadyRunning: boolean }> {
+    return this.http.post<{ alreadyRunning: boolean }>('/api/auto-prepare', {});
+  }
+
+  autoPrepareStatus(): Observable<AutoPrepareStatus> {
+    return this.http.get<AutoPrepareStatus>('/api/auto-prepare');
   }
 
   startApplication(jobId: string): Observable<Application> {

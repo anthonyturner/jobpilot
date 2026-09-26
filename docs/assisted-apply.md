@@ -41,3 +41,9 @@ Read this file before touching anything under `server/src/services/apply/`,
     until the owner approves. It skips a company that already has an application in `preparing` or
     `review`. Before counting the review queue it moves any application stuck in `preparing` for over
     30 minutes (left by a killed process) to `failed`, and touches no other status. Everything it does is in the audit log under the `scheduler` actor.
+13. **Prepare top matches on demand.** The Applications page's "Prepare top matches" button runs the
+    same `AutoPrepareService` pass inside the server (`POST /api/auto-prepare`), with every limit in
+    rule 12 except two. It ignores the unattended on/off switch, which governs scheduled runs only.
+    Its audit entries are recorded under the `user` actor, with an `autoprepare.started` entry marked
+    `manual`. It still refuses while the kill switch is off or setup is unfinished, and runs no sweep
+    first. Only one runs at a time, and nothing it creates goes past `review`.

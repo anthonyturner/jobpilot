@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ApplicantSchema, AutomationSchema } from '../domain/applicant.js';
 import type { ApplicantStore } from '../services/applicant-store.js';
 import type { ApplicationService } from '../services/apply/application-service.js';
+import type { AutoPrepareService } from '../services/apply/auto-prepare-service.js';
 import { parseOrThrow } from './validation.js';
 
 const IdParams = z.object({ id: z.uuid() });
@@ -26,9 +27,18 @@ const AnswersBody = z.object({
 const ApproveBody = z.object({ acknowledgeFlags: z.boolean().default(false) }).default({ acknowledgeFlags: false });
 const SubmitBody = z.object({ confirmCompany: z.string().trim().min(1).max(120) });
 const ImportBody = z.object({ path: z.string().trim().min(5).max(400) });
+/** The button takes no options: it always uses the owner's saved topN and minScore. */
+const PrepareTopBody = z.object({}).strict();
 
-export function registerApplicationRoutes(app: FastifyInstance, deps: { service: ApplicationService; store: ApplicantStore; defaultResumePath: string }): void {
-  const { service, store } = deps;
+export interface ApplicationRouteDeps {
+  service: ApplicationService;
+  store: ApplicantStore;
+  autoPrepare?: AutoPrepareService | undefined;
+  defaultResumePath: string;
+}
+
+export function registerApplicationRoutes(app: FastifyInstance, deps: ApplicationRouteDeps): void {
+  const { service, store, autoPrepare } = deps;
 
   // ---- Resume, applicant facts, automation policy -----------------------
   app.get('/api/resume', async () => ({ resume: store.getResume(), defaultPath: deps.defaultResumePath }));
@@ -48,6 +58,16 @@ export function registerApplicationRoutes(app: FastifyInstance, deps: { service:
     const created = service.create(parseOrThrow(IdParams, req.params).id);
     return reply.code(201).send(created);
   });
+
+  // "Prepare top matches": tailoring takes minutes per job, so this answers as soon as the run starts.
+  if (autoPrepare) {
+    app.get('/api/auto-prepare', async () => autoPrepare.status());
+    app.post('/api/auto-prepare', async (req, reply) => {
+      parseOrThrow(PrepareTopBody, req.body ?? {});
+      const { alreadyRunning } = autoPrepare.start('manual');
+      return reply.code(alreadyRunning ? 200 : 202).send({ alreadyRunning });
+    });
+  }
 
   app.patch('/api/applications/:id/packet', async (req) => service.editPacket(parseOrThrow(IdParams, req.params).id, parseOrThrow(PacketEditBody, req.body)));
   app.post('/api/applications/:id/regenerate', async (req) => service.regenerate(parseOrThrow(IdParams, req.params).id));
