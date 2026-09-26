@@ -84,6 +84,11 @@ describe('AutoPrepareService', () => {
 
   const audit = (): AuditRow[] => db.prepare('SELECT actor, action, job_id, detail FROM audit_log ORDER BY id').all() as unknown as AuditRow[];
 
+  /** Simulates a row last touched some minutes ago, e.g. by a process that was killed mid-draft. */
+  const backdate = (applicationId: string, minutes: number): void => {
+    db.prepare('UPDATE applications SET updated_at = ? WHERE id = ?').run(new Date(Date.now() - minutes * 60_000).toISOString(), applicationId);
+  };
+
   beforeEach(() => {
     db = openInMemoryDatabase();
     jobs = new JobRepository(db);
@@ -249,6 +254,81 @@ describe('AutoPrepareService', () => {
     const result = await autoPrepare.run();
     assert.deepEqual(result.prepared.map((p) => p.jobId), [other]);
     assert.ok(result.skipped.some((s) => s.jobId === blockedJob && /72 hours/.test(s.reason)));
+  });
+
+  it('skips a company that still has an application being prepared or waiting for review from an earlier run', async () => {
+    configure({ enabled: true, topN: 5 });
+    const reviewing = service.create(addJob('Globex', 60, { title: 'Angular Developer' }));
+    await service.whenPrepared(reviewing.id);
+    applications.create(addJob('Initech', 60, { title: 'Angular Developer' }), 'https://example.com/apply');
+    const cancelled = service.create(addJob('Hooli', 60, { title: 'Angular Developer' }));
+    await service.whenPrepared(cancelled.id);
+    service.cancel(cancelled.id);
+    const globex = addJob('Globex', 95);
+    const initech = addJob(' initech ', 90);
+    const hooli = addJob('Hooli', 85);
+
+    const result = await autoPrepare.run();
+
+    assert.deepEqual(result.prepared.map((p) => p.jobId), [hooli]);
+    for (const jobId of [globex, initech]) {
+      assert.ok(result.skipped.some((s) => s.jobId === jobId && /already has an application/.test(s.reason)), `skipped ${jobId}`);
+    }
+  });
+
+  it('moves an application stuck in preparing for over 30 minutes to failed before counting the queue', async () => {
+    configure({ enabled: true, topN: 1 });
+    const stuckJob = addJob('Globex', 70, { title: 'Angular Developer' });
+    const stuck = applications.create(stuckJob, 'https://example.com/apply');
+    backdate(stuck.id, 31);
+    const fresh = addJob('Initech', 90);
+
+    const result = await autoPrepare.run();
+
+    assert.equal(result.outcome, 'finished');
+    assert.deepEqual(result.prepared.map((p) => p.jobId), [fresh]);
+    const recovered = applications.get(stuck.id)!;
+    assert.equal(recovered.status, 'failed');
+    assert.match(recovered.note, /interrupted/);
+    assert.equal(recovered.approvedAt, null);
+    const entry = audit().find((r) => r.action === 'autoprepare.recovered')!;
+    assert.equal(entry.actor, 'scheduler');
+    assert.equal(entry.job_id, stuckJob);
+    assert.equal(automation.calls.length, 0);
+  });
+
+  it('leaves a recent preparing application and every other status exactly as it was', async () => {
+    configure({ enabled: true, topN: 1 });
+    const recent = applications.create(addJob('Globex', 60), 'https://example.com/apply');
+    backdate(recent.id, 29);
+    const others = (['review', 'approved', 'previewed', 'needs_attention', 'cancelled', 'submitted', 'failed'] as const).map((status) => {
+      const app = applications.create(addJob(`Company ${status}`, 60), 'https://example.com/apply');
+      applications.update(app.id, { status });
+      backdate(app.id, 120);
+      return { id: app.id, status };
+    });
+    addJob('Initech', 90);
+
+    const result = await autoPrepare.run();
+
+    assert.equal(result.outcome, 'queue-full');
+    assert.equal(applications.get(recent.id)!.status, 'preparing');
+    for (const { id, status } of others) assert.equal(applications.get(id)!.status, status);
+    assert.ok(!audit().some((r) => r.action === 'autoprepare.recovered'));
+  });
+
+  it('recovers nothing while the run is not allowed to go ahead', async () => {
+    const stuck = applications.create(addJob('Globex', 70), 'https://example.com/apply');
+    backdate(stuck.id, 60);
+
+    assert.equal((await autoPrepare.run()).outcome, 'disabled');
+    configure({ enabled: true }, { enabled: false });
+    assert.equal((await autoPrepare.run()).outcome, 'stopped');
+    configure({}, { enabled: true });
+    setupDone = false;
+    assert.equal((await autoPrepare.run()).outcome, 'blocked');
+
+    assert.equal(applications.get(stuck.id)!.status, 'preparing');
   });
 
   it('skips listings without a usable description and those under the threshold', async () => {
