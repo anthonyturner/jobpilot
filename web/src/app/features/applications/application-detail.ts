@@ -63,6 +63,8 @@ export class ApplicationDetail {
     const auto = this.automation();
     return !!a?.ats && !!auto?.enabled && auto.modes[a.ats] === 'submit' && a.status === 'previewed';
   });
+  /** False only once the settings have loaded with the kill switch engaged; the server enforces it either way. */
+  protected readonly fillingOn = computed(() => this.automation()?.enabled !== false);
   protected readonly openQuestions = computed(() => this.app()?.report?.open ?? []);
   protected readonly answersComplete = computed(() =>
     this.openQuestions().filter((q) => q.required).every((q) => (this.answers()[q.label] ?? '').trim().length > 0),
@@ -141,6 +143,12 @@ export class ApplicationDetail {
     this.run('approve', this.api.applicationAction(this.id(), 'approve', { acknowledgeFlags: this.flagsChecked() }));
   }
 
+  protected approveAndFill(): void {
+    const id = this.id();
+    // The approval can stand even when the fill after it fails, so reload to show the real state.
+    this.run('approve-fill', this.api.applicationAction(id, 'approve-and-preview', { acknowledgeFlags: this.flagsChecked() }), () => this.tab.set('form'), () => this.load(id));
+  }
+
   protected regenerate(): void {
     this.run('regenerate', this.api.applicationAction(this.id(), 'regenerate'));
   }
@@ -181,7 +189,7 @@ export class ApplicationDetail {
     return timeAgo(iso);
   }
 
-  private run(label: string, request: Observable<Application>, after?: () => void): void {
+  private run(label: string, request: Observable<Application>, after?: () => void, afterError?: () => void): void {
     this.busy.set(label);
     this.error.set(null);
     request.subscribe({
@@ -194,6 +202,7 @@ export class ApplicationDetail {
         this.busy.set(null);
         const body = err.error as { error?: string; issues?: Array<{ message: string }> } | null;
         this.error.set(body?.issues?.[0]?.message ?? body?.error ?? 'Something went wrong. Is the server running?');
+        afterError?.();
       },
     });
   }

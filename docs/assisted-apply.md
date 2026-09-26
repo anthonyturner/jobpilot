@@ -7,6 +7,8 @@ Read this file before touching anything under `server/src/services/apply/`,
 
 1. **Human in the loop.** `preparing → review → approved → previewed → submitted`. Any edit to the
    packet sends it back to `review`. Approval is per application; there is no "approve all".
+   "Approve and fill" is the owner's one click for approve followed by the preview fill, on one
+   application: it never submits, and it is refused whole while the kill switch is on.
 2. **Fill only by default.** Each ATS mode is `off`, `preview` (fill, screenshot, never submit) or
    `submit`. The default is `preview`. "Open filled form" leaves a visible window for the owner
    to press submit themselves.

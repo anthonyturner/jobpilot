@@ -2,19 +2,26 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { beforeEach, describe, it } from 'node:test';
+import { after, before, beforeEach, describe, it } from 'node:test';
+import type { FastifyInstance } from 'fastify';
 import type { Packet } from '../src/domain/application.js';
+import { buildApp } from '../src/http/app.js';
 import { AuditRepository } from '../src/persistence/audit-repository.js';
 import { ApplicationRepository } from '../src/persistence/application-repository.js';
 import { openInMemoryDatabase } from '../src/persistence/database.js';
 import { JobRepository } from '../src/persistence/job-repository.js';
+import { RunRepository } from '../src/persistence/run-repository.js';
 import { SettingsRepository } from '../src/persistence/settings-repository.js';
+import { AggregationService } from '../src/services/aggregation-service.js';
 import { ApplicantStore } from '../src/services/applicant-store.js';
 import { ApplicationService } from '../src/services/apply/application-service.js';
 import type { AutomationOutcome, AutomationRequest, FormAutomation } from '../src/services/apply/playwright-automation.js';
 import { normalizeJob } from '../src/services/normalize.js';
+import { ProfileStore } from '../src/services/profile-store.js';
+import { SchedulerService } from '../src/services/scheduler-service.js';
 import { KeywordJobScorer } from '../src/services/scoring/keyword-scorer.js';
 import { parseDocxResume } from '../src/services/resume/docx-resume-parser.js';
+import { SourceRegistry } from '../src/sources/source-registry.js';
 import { profile, rawJob } from './helpers.js';
 import { SAMPLE } from './resume-tailoring.test.js';
 
@@ -189,5 +196,123 @@ describe('ApplicationService guardrails', () => {
     const app = service.markSubmitted(id);
     assert.equal(app.status, 'submitted');
     assert.equal(app.mode, 'manual');
+  });
+
+  it('approve-and-fill approves, then previews in a hidden browser without pressing submit', async () => {
+    const id = await ready();
+    const app = await service.approveAndPreview(id, false);
+    assert.equal(app.status, 'previewed');
+    assert.ok(app.approvedAt);
+    assert.equal(automation.calls.length, 1);
+    assert.equal(automation.calls[0]!.submit, false);
+    assert.equal(automation.calls[0]!.headed, false);
+    assert.equal(jobs.get(jobId)!.status, 'applying');
+  });
+
+  it('approve-and-fill fills nothing when approval is refused', async () => {
+    tailorResult = packet(['Kubernetes']);
+    const id = await ready();
+    await assert.rejects(service.approveAndPreview(id, false), /flagged terms/);
+    assert.equal(service.get(id).status, 'review');
+    assert.equal(service.get(id).approvedAt, null);
+    assert.equal(automation.calls.length, 0);
+
+    const app = await service.approveAndPreview(id, true);
+    assert.equal(app.status, 'previewed');
+  });
+
+  it('approve-and-fill only starts from review', async () => {
+    const id = await ready();
+    service.approve(id, false);
+    await assert.rejects(service.approveAndPreview(id, false), /waiting for review/);
+    assert.equal(automation.calls.length, 0);
+  });
+
+  it('approve-and-fill is refused whole while the kill switch is engaged', async () => {
+    const id = await ready();
+    await service.saveAutomation({ ...store.getAutomation(), enabled: false });
+    await assert.rejects(service.approveAndPreview(id, false), /kill switch/);
+    assert.equal(service.get(id).status, 'review');
+    assert.equal(service.get(id).approvedAt, null);
+    assert.equal(automation.calls.length, 0);
+  });
+
+  it('approve-and-fill keeps the approval when the fill hits a stop condition', async () => {
+    const id = await ready();
+    automation.outcome = { blockers: ['A CAPTCHA is showing. Finish this one in the browser yourself.'] };
+    const app = await service.approveAndPreview(id, false);
+    assert.equal(app.status, 'needs_attention');
+    assert.ok(app.approvedAt);
+    assert.match(app.note, /CAPTCHA/);
+    await assert.rejects(service.submit(id, 'Globex'), /clean preview/);
+  });
+});
+
+describe('Approve-and-fill over HTTP', () => {
+  const HOST = { host: '127.0.0.1:7317' };
+  const WEB = { ...HOST, 'x-jobpilot-client': 'web' };
+  let app: FastifyInstance;
+  let service: ApplicationService;
+  let automation: FakeAutomation;
+  let jobId: string;
+
+  before(async () => {
+    const db = openInMemoryDatabase();
+    const settings = new SettingsRepository(db);
+    const jobs = new JobRepository(db);
+    const runs = new RunRepository(db);
+    const audit = new AuditRepository(db);
+    const profiles = new ProfileStore(settings);
+    const store = new ApplicantStore(settings);
+    store.saveResume(parseDocxResume(SAMPLE));
+    const job = normalizeJob(rawJob({ company: 'Globex' }))!;
+    jobId = jobs.upsert(job, new KeywordJobScorer().score(job, profile())).id;
+    automation = new FakeAutomation();
+    const registry = new SourceRegistry([]);
+    const log = { info() {}, warn() {}, error() {} };
+    service = new ApplicationService({
+      jobs,
+      applications: new ApplicationRepository(db),
+      audit,
+      store,
+      tailor: { tailor: async () => packet(['Kubernetes']) },
+      pdf: { render: async (_html, out) => fs.writeFileSync(out, '%PDF-fake') },
+      automation,
+      dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'jobpilot-test-')),
+      log,
+    });
+    const aggregation = new AggregationService({ registry, jobs, runs, audit, profiles, scorer: new KeywordJobScorer(), http: { getJson: () => Promise.reject(new Error('offline')) }, log });
+    app = await buildApp(
+      { port: 7317, ingestToken: 'x'.repeat(64), logLevel: 'silent', webDistDir: null },
+      { jobs, runs, audit, profiles, registry, aggregation, scheduler: new SchedulerService('UTC', () => {}), applications: service, applicantStore: store },
+    );
+  });
+
+  after(async () => {
+    await app.close();
+  });
+
+  it('refuses the action without the client header, and passes the flag acknowledgement through', async () => {
+    const { id } = service.create(jobId);
+    await service.whenPrepared(id);
+    const url = `/api/applications/${id}/approve-and-preview`;
+
+    const noHeader = await app.inject({ method: 'POST', url, headers: HOST, payload: { acknowledgeFlags: true } });
+    assert.equal(noHeader.statusCode, 403);
+    const unacknowledged = await app.inject({ method: 'POST', url, headers: WEB, payload: {} });
+    assert.equal(unacknowledged.statusCode, 409);
+    assert.equal(automation.calls.length, 0);
+    assert.equal(service.get(id).status, 'review');
+
+    const done = await app.inject({ method: 'POST', url, headers: WEB, payload: { acknowledgeFlags: true } });
+    assert.equal(done.statusCode, 200);
+    assert.equal(done.json().status, 'previewed');
+    assert.equal(automation.calls.length, 1);
+    assert.equal(automation.calls[0]!.submit, false);
+  });
+
+  it('validates the application id', async () => {
+    const bad = await app.inject({ method: 'POST', url: '/api/applications/not-an-id/approve-and-preview', headers: WEB, payload: {} });
+    assert.equal(bad.statusCode, 400);
   });
 });

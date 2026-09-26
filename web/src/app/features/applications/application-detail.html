@@ -198,7 +198,7 @@
             } @else {
               <section class="card glass empty-form">
                 <app-icon name="layers" [size]="24" />
-                <p>Approve the packet, then run <b>Preview form</b>. JobPilot fills the employer's form in a hidden browser, shows you a screenshot, and never presses submit.</p>
+                <p>Press <b>Approve and fill form</b>, or approve first and run <b>Preview form</b> later. JobPilot fills the employer's form in a hidden browser, shows you a screenshot, and never presses submit.</p>
               </section>
             }
           }
@@ -226,8 +226,16 @@
                 <label class="inline"><button type="button" class="switch" [class.on]="flagsChecked()" (click)="flagsChecked.set(!flagsChecked())" aria-label="I checked these"></button> I checked these and they're accurate</label>
               </div>
             }
-            <button class="btn primary wide" type="button" (click)="approve()" [disabled]="dirty() || !!busy() || (!!a.packet?.ungrounded?.length && !flagsChecked())">
-              <app-icon name="check" [size]="14" /> {{ dirty() ? 'Save your edits first' : 'Approve packet' }}
+            <button class="btn primary wide" type="button" (click)="approveAndFill()" [disabled]="dirty() || !!busy() || !fillingOn() || (!!a.packet?.ungrounded?.length && !flagsChecked())">
+              <app-icon name="layers" [size]="14" [class.spin]="busy() === 'approve-fill'" />
+              {{ dirty() ? 'Save your edits first' : busy() === 'approve-fill' ? 'Approving and filling…' : 'Approve and fill form' }}
+            </button>
+            <p class="muted small tiny">
+              @if (fillingOn()) { Approves, then fills the form in a hidden browser and screenshots it. Nothing is sent. }
+              @else { Automation is switched off in Settings, so JobPilot can't fill forms. You can still approve on its own. }
+            </p>
+            <button class="btn wide" type="button" (click)="approve()" [disabled]="dirty() || !!busy() || (!!a.packet?.ungrounded?.length && !flagsChecked())">
+              <app-icon name="check" [size]="14" /> {{ busy() === 'approve' ? 'Approving…' : 'Approve only' }}
             </button>
             <button class="btn ghost wide" type="button" (click)="regenerate()" [disabled]="!!busy()"><app-icon name="refresh" [size]="14" /> Redraft with Claude</button>
           }

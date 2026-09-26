@@ -246,6 +246,13 @@ export class ApplicationService {
     return this.recordOutcome(app, outcome, 'preview');
   }
 
+  /** Checks the kill switch before approving, so a fill refused for that reason never leaves a lone approval behind. */
+  async approveAndPreview(id: string, acknowledgeFlags: boolean): Promise<Application> {
+    this.assertAutomationOn();
+    this.approve(id, acknowledgeFlags);
+    return this.preview(id);
+  }
+
   /** Opens a visible browser with the form filled in. The owner reviews and presses submit. */
   async openInBrowser(id: string): Promise<Application> {
     const app = this.require(id, FILLABLE, 'Approve the packet before opening the form.');
