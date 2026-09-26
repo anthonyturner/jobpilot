@@ -12,6 +12,7 @@ import { registerSecurity } from './security.js';
 import { ValidationError } from './validation.js';
 import type { ApplicantStore } from '../services/applicant-store.js';
 import type { ApplicationService } from '../services/apply/application-service.js';
+import type { AutoPrepareService } from '../services/apply/auto-prepare-service.js';
 
 export interface AppOptions {
   port: number;
@@ -23,7 +24,13 @@ export interface AppOptions {
 
 export async function buildApp(
   options: AppOptions,
-  deps: RouteDeps & { applications?: ApplicationService; applicantStore?: ApplicantStore; setup?: SetupService; credentials?: CredentialStore },
+  deps: RouteDeps & {
+    applications?: ApplicationService;
+    applicantStore?: ApplicantStore;
+    autoPrepare?: AutoPrepareService;
+    setup?: SetupService;
+    credentials?: CredentialStore;
+  },
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -71,7 +78,12 @@ export async function buildApp(
 
   registerRoutes(app, deps);
   if (deps.applications && deps.applicantStore) {
-    registerApplicationRoutes(app, { service: deps.applications, store: deps.applicantStore, defaultResumePath: options.defaultResumePath ?? '' });
+    registerApplicationRoutes(app, {
+      service: deps.applications,
+      store: deps.applicantStore,
+      autoPrepare: deps.autoPrepare,
+      defaultResumePath: options.defaultResumePath ?? '',
+    });
   }
   if (deps.setup && deps.credentials && deps.applications) {
     registerSetupRoutes(app, { setup: deps.setup, credentials: deps.credentials, applications: deps.applications });

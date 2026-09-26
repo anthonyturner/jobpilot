@@ -3,10 +3,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { beforeEach, describe, it } from 'node:test';
+import { afterEach, beforeEach, describe, it } from 'node:test';
+import type { FastifyInstance } from 'fastify';
 import { AutomationSchema, DEFAULT_AUTOMATION, type Automation } from '../src/domain/applicant.js';
 import type { Packet } from '../src/domain/application.js';
 import type { Job, ScoreBreakdown } from '../src/domain/job.js';
+import { buildApp } from '../src/http/app.js';
 import { ApplicationRepository } from '../src/persistence/application-repository.js';
 import { AuditRepository } from '../src/persistence/audit-repository.js';
 import { openInMemoryDatabase } from '../src/persistence/database.js';
@@ -20,6 +22,7 @@ import { AutoPrepareService } from '../src/services/apply/auto-prepare-service.j
 import type { AutomationOutcome, AutomationRequest, FormAutomation } from '../src/services/apply/playwright-automation.js';
 import { normalizeJob } from '../src/services/normalize.js';
 import { ProfileStore } from '../src/services/profile-store.js';
+import { SchedulerService } from '../src/services/scheduler-service.js';
 import { parseDocxResume } from '../src/services/resume/docx-resume-parser.js';
 import { KeywordJobScorer } from '../src/services/scoring/keyword-scorer.js';
 import { SourceRegistry } from '../src/sources/source-registry.js';
@@ -72,6 +75,7 @@ describe('AutoPrepareService', () => {
   let failFor: Set<string>;
   let onTailor: (job: Job) => void;
   let tailored: string[];
+  let gate: Promise<void> | null;
 
   const addJob = (company: string, total: number, options: { title?: string; limitedData?: boolean } = {}): string => {
     const job = normalizeJob(rawJob({ company, title: options.title ?? 'Senior Angular Engineer', sourceJobId: `${company}-${options.title ?? ''}` }))!;
@@ -100,6 +104,7 @@ describe('AutoPrepareService', () => {
     failFor = new Set();
     onTailor = () => {};
     tailored = [];
+    gate = null;
     const log = { info() {}, warn() {}, error() {} };
     service = new ApplicationService({
       jobs,
@@ -110,6 +115,7 @@ describe('AutoPrepareService', () => {
         tailor: async (_resume, job) => {
           tailored.push(job.company);
           onTailor(job);
+          await gate;
           if (failFor.has(job.company)) throw new Error('Claude is not logged in');
           return packet();
         },
@@ -400,6 +406,82 @@ describe('AutoPrepareService', () => {
     assert.ok(audit().some((r) => r.action === 'application.failed'));
   });
 
+  it('a manual run ignores the unattended switch and records every step under the owner', async () => {
+    configure({ enabled: false, topN: 1 });
+    const jobId = addJob('Globex', 90);
+
+    const result = await autoPrepare.run({ trigger: 'manual' });
+
+    assert.equal(result.outcome, 'finished');
+    assert.deepEqual(result.prepared.map((p) => p.jobId), [jobId]);
+    const rows = audit().filter((r) => r.action.startsWith('autoprepare.') || r.action === 'application.created');
+    assert.ok(rows.length >= 3);
+    assert.ok(rows.every((r) => r.actor === 'user'), JSON.stringify(rows));
+    assert.equal(rows.find((r) => r.action === 'autoprepare.started')!.detail, 'manual');
+    assert.equal(applications.get(result.prepared[0]!.applicationId)!.approvedAt, null);
+    assert.equal(jobs.get(jobId)!.status, 'new');
+  });
+
+  it('an unattended run records its trigger and still respects the feature switch', async () => {
+    addJob('Globex', 90);
+    assert.equal((await autoPrepare.run()).outcome, 'disabled');
+    const started = audit().find((r) => r.action === 'autoprepare.started')!;
+    assert.deepEqual([started.actor, started.detail], ['scheduler', 'unattended']);
+  });
+
+  it('refuses to start a manual run while the kill switch is off or setup is unfinished', () => {
+    addJob('Globex', 90);
+    configure({}, { enabled: false });
+    assert.throws(() => autoPrepare.start('manual'), /kill switch/);
+    configure({}, { enabled: true });
+    setupDone = false;
+    assert.throws(() => autoPrepare.start('manual'), /setup wizard/);
+    assert.equal(applications.list().length, 0);
+    assert.equal(autoPrepare.status().running, false);
+  });
+
+  it('a manual run re-checks the kill switch before each job', async () => {
+    configure({ topN: 3 });
+    addJob('Globex', 95);
+    addJob('Initech', 90);
+    onTailor = () => configure({}, { enabled: false });
+
+    const result = await autoPrepare.start('manual').done;
+    assert.equal(result.outcome, 'stopped');
+    assert.deepEqual(tailored, ['Globex']);
+  });
+
+  it('runs one manual pass at a time and reports progress while it works', async () => {
+    configure({ topN: 2 });
+    const first = addJob('Globex', 95);
+    addJob('Initech', 90);
+    let release!: () => void;
+    gate = new Promise((resolve) => (release = resolve));
+
+    const started = autoPrepare.start('manual');
+    assert.equal(started.alreadyRunning, false);
+    const again = autoPrepare.start('manual');
+    assert.equal(again.alreadyRunning, true);
+    const live = autoPrepare.status();
+    assert.equal(live.running, true);
+    assert.equal(live.trigger, 'manual');
+    assert.equal(live.finishedAt, null);
+    assert.deepEqual(live.result!.started.map((s) => s.jobId), [first]);
+
+    release();
+    await started.done;
+    const done = autoPrepare.status();
+    assert.equal(done.running, false);
+    assert.ok(done.finishedAt);
+    assert.equal(done.result!.outcome, 'finished');
+    assert.equal(done.result!.prepared.length, 2);
+    assert.ok(applications.list().every((a) => a.status === 'review' && a.approvedAt === null));
+    assert.equal(automation.calls.length, 0);
+    const next = autoPrepare.start('manual');
+    assert.equal(next.alreadyRunning, false, 'a new run may start once the last one finished');
+    assert.equal((await next.done).outcome, 'queue-full', 'topN still means "top the queue up to N"');
+  });
+
   it('refuses every form and submit action on an application the owner never approved', async () => {
     configure({ enabled: true, topN: 1 });
     addJob('Globex', 95);
@@ -466,5 +548,125 @@ describe('Unattended sweep trigger', () => {
     assert.equal(runs.runningSince(hourAgo)?.id, id);
     runs.finish(id, 'succeeded', {});
     assert.equal(runs.runningSince(hourAgo), undefined);
+  });
+});
+
+describe('Prepare top matches over HTTP', () => {
+  const HOST = { host: '127.0.0.1:7317' };
+  const WEB = { ...HOST, 'x-jobpilot-client': 'web' };
+  const URL = '/api/auto-prepare';
+  let app: FastifyInstance;
+  let db: DatabaseSync;
+  let store: ApplicantStore;
+  let applications: ApplicationRepository;
+  let autoPrepare: AutoPrepareService;
+  let automation: RecordingAutomation;
+  let setupDone: boolean;
+  let release: () => void;
+
+  beforeEach(async () => {
+    db = openInMemoryDatabase();
+    const settings = new SettingsRepository(db);
+    const jobs = new JobRepository(db);
+    const runs = new RunRepository(db);
+    const audit = new AuditRepository(db);
+    const profiles = new ProfileStore(settings);
+    applications = new ApplicationRepository(db);
+    store = new ApplicantStore(settings);
+    store.saveResume(parseDocxResume(SAMPLE));
+    for (const [company, total] of [['Globex', 95], ['Initech', 90]] as const) {
+      const job = normalizeJob(rawJob({ company, sourceJobId: company }))!;
+      jobs.upsert(job, score(total));
+    }
+    automation = new RecordingAutomation();
+    setupDone = true;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const log = { info() {}, warn() {}, error() {} };
+    const service = new ApplicationService({
+      jobs,
+      applications,
+      audit,
+      store,
+      tailor: {
+        tailor: async () => {
+          await gate;
+          return packet();
+        },
+      },
+      pdf: { render: async (_html, out) => fs.writeFileSync(out, '%PDF-fake') },
+      automation,
+      dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'jobpilot-test-')),
+      log,
+    });
+    autoPrepare = new AutoPrepareService({ jobs, applications, applying: service, store, audit, log, blocked: () => (setupDone ? null : 'Finish the setup wizard before preparing applications.') });
+    const registry = new SourceRegistry([]);
+    const aggregation = new AggregationService({ registry, jobs, runs, audit, profiles, scorer: new KeywordJobScorer(), http: { getJson: () => Promise.reject(new Error('offline')) }, log });
+    app = await buildApp(
+      { port: 7317, ingestToken: 'x'.repeat(64), logLevel: 'silent', webDistDir: null },
+      { jobs, runs, audit, profiles, registry, aggregation, scheduler: new SchedulerService('UTC', () => {}), applications: service, applicantStore: store, autoPrepare },
+    );
+  });
+
+  afterEach(async () => {
+    release();
+    await app.close();
+  });
+
+  it('refuses the request from a foreign host, a foreign origin or without the client header', async () => {
+    const foreignHost = await app.inject({ method: 'POST', url: URL, headers: { ...WEB, host: 'evil.example:7317' }, payload: {} });
+    assert.equal(foreignHost.statusCode, 421);
+    const foreignOrigin = await app.inject({ method: 'POST', url: URL, headers: { ...WEB, origin: 'https://evil.example' }, payload: {} });
+    assert.equal(foreignOrigin.statusCode, 403);
+    const noHeader = await app.inject({ method: 'POST', url: URL, headers: HOST, payload: {} });
+    assert.equal(noHeader.statusCode, 403);
+    const statusFromElsewhere = await app.inject({ method: 'GET', url: URL, headers: { ...HOST, origin: 'https://evil.example' } });
+    assert.equal(statusFromElsewhere.statusCode, 403);
+    assert.equal(applications.list().length, 0);
+    assert.equal(autoPrepare.status().running, false);
+  });
+
+  it('rejects a body with options it does not take', async () => {
+    const res = await app.inject({ method: 'POST', url: URL, headers: WEB, payload: { topN: 10 } });
+    assert.equal(res.statusCode, 400);
+    assert.equal(applications.list().length, 0);
+  });
+
+  it('explains why it cannot start while the kill switch is off or setup is unfinished', async () => {
+    store.saveAutomation({ ...store.getAutomation(), enabled: false });
+    const killed = await app.inject({ method: 'POST', url: URL, headers: WEB, payload: {} });
+    assert.equal(killed.statusCode, 409);
+    assert.match(killed.json().error, /kill switch/);
+
+    store.saveAutomation({ ...store.getAutomation(), enabled: true });
+    setupDone = false;
+    const unfinished = await app.inject({ method: 'POST', url: URL, headers: WEB, payload: {} });
+    assert.equal(unfinished.statusCode, 409);
+    assert.match(unfinished.json().error, /setup wizard/);
+    assert.equal(applications.list().length, 0);
+  });
+
+  it('answers straight away, refuses a second run while one is going, and stops every draft at review', async () => {
+    const first = await app.inject({ method: 'POST', url: URL, headers: WEB });
+    assert.equal(first.statusCode, 202);
+    assert.deepEqual(first.json(), { alreadyRunning: false });
+    const second = await app.inject({ method: 'POST', url: URL, headers: WEB, payload: {} });
+    assert.equal(second.statusCode, 200);
+    assert.deepEqual(second.json(), { alreadyRunning: true });
+
+    const live = (await app.inject({ method: 'GET', url: URL, headers: HOST })).json();
+    assert.equal(live.running, true);
+    assert.equal(live.result.started.length, 1);
+    assert.equal(applications.list()[0]!.status, 'preparing');
+
+    release();
+    await autoPrepare.start('manual').done;
+    const done = (await app.inject({ method: 'GET', url: URL, headers: HOST })).json();
+    assert.equal(done.running, false);
+    assert.equal(done.result.outcome, 'finished');
+    assert.equal(done.result.prepared.length, 2);
+    assert.ok(applications.list().every((a) => a.status === 'review' && a.approvedAt === null));
+    assert.equal(automation.calls.length, 0);
+    const actors = db.prepare(`SELECT DISTINCT actor FROM audit_log WHERE action LIKE 'autoprepare.%'`).all() as Array<{ actor: string }>;
+    assert.deepEqual(actors.map((r) => r.actor), ['user']);
   });
 });
