@@ -44,6 +44,12 @@ const ACTOR: AuditActor = 'scheduler';
 const HOUR_MS = 3_600_000;
 /** How many top-scoring listings one run looks through before giving up on filling the queue. */
 const CANDIDATE_POOL = 200;
+/**
+ * A draft takes up to about 8 minutes, so one still `preparing` after 30 was orphaned by a
+ * process that was killed mid-draft. The margin keeps a slow but live draft from being failed.
+ */
+const STALE_PREPARING_MS = 30 * 60_000;
+const STALE_NOTE = 'Preparation was interrupted before it finished (still preparing after 30 minutes). Start a new application for this job to try again.';
 
 /**
  * Unattended preparation: picks the strongest new matches and tailors a packet for
@@ -61,6 +67,7 @@ export class AutoPrepareService {
     const initialStop = this.stopReason();
     if (initialStop) return this.finish(result, initialStop.outcome, initialStop.reason);
 
+    this.recoverStalePreparing();
     const settings = this.deps.store.getAutomation().autoPrepare;
     const room = settings.topN - this.deps.applications.countWaitingForReview();
     if (room <= 0) return this.finish(result, 'queue-full', `${settings.topN} or more applications already wait for your review.`);
@@ -99,6 +106,16 @@ export class AutoPrepareService {
     }
   }
 
+  /** Frees the review queue from drafts whose process died, so they stop counting against topN. */
+  private recoverStalePreparing(): void {
+    const now = this.deps.now?.() ?? Date.now();
+    const cutoff = new Date(now - STALE_PREPARING_MS).toISOString();
+    for (const app of this.deps.applications.failStalePreparing(cutoff, STALE_NOTE, new Date(now).toISOString())) {
+      this.deps.audit.record(ACTOR, 'autoprepare.recovered', app.jobId, `Application ${app.id}: preparing -> failed (interrupted)`);
+      this.deps.log.warn(`Application ${app.id} was still preparing after 30 minutes; marked it failed.`);
+    }
+  }
+
   /** Re-read on every call: the owner may flip a switch in the running app while this process works. */
   private stopReason(): { outcome: 'stopped' | 'disabled'; reason: string } | null {
     const automation = this.deps.store.getAutomation();
@@ -110,6 +127,7 @@ export class AutoPrepareService {
   private skipReason(job: Job, companies: Set<string>): string | null {
     if (job.scoreBreakdown.skills.limitedData) return 'No usable job description to tailor against.';
     if (companies.has(companyKey(job.company))) return 'Another job at this company was prepared in this run.';
+    if (this.deps.applications.hasOpenDraftAtCompany(job.company)) return `${job.company} already has an application being prepared or waiting for your review.`;
     const gapHours = this.deps.store.getAutomation().sameCompanyGapHours;
     const last = this.deps.applications.lastSubmissionToCompany(job.company, '');
     const now = this.deps.now?.() ?? Date.now();

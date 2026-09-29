@@ -80,6 +80,28 @@ export class ApplicationRepository {
     return (this.db.prepare(`SELECT COUNT(*) AS n FROM applications WHERE status IN ('preparing', 'review')`).get() as { n: number }).n;
   }
 
+  /**
+   * Moves every application still `preparing` since before the cutoff to `failed`, and returns them.
+   * One statement, so a draft that finishes at the same moment is never overwritten.
+   */
+  failStalePreparing(cutoffIso: string, note: string, nowIso: string): Array<{ id: string; jobId: string }> {
+    const rows = this.db
+      .prepare(`UPDATE applications SET status = 'failed', note = ?, updated_at = ? WHERE status = 'preparing' AND updated_at < ? RETURNING id, job_id`)
+      .all(note, nowIso, cutoffIso) as Array<{ id: string; job_id: string }>;
+    return rows.map((row) => ({ id: row.id, jobId: row.job_id }));
+  }
+
+  /** Whether a job at this company has an application being tailored or waiting for review. */
+  hasOpenDraftAtCompany(company: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT 1 AS found FROM applications a JOIN jobs j ON j.id = a.job_id
+         WHERE lower(trim(j.company)) = lower(trim(?)) AND a.status IN ('preparing', 'review') LIMIT 1`,
+      )
+      .get(company);
+    return row !== undefined;
+  }
+
   list(): Application[] {
     return (this.db.prepare('SELECT * FROM applications ORDER BY updated_at DESC LIMIT 300').all() as unknown as Row[]).map(toApplication);
   }
